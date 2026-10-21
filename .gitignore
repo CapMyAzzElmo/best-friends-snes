@@ -1,0 +1,10 @@
+build/
+*.obj
+*.ps
+*.sym
+*.symfull
+*.log
+linkfile
+hdr.asm
+/comrades.sfc
+__pycache__/
