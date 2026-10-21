@@ -44,6 +44,8 @@ def main():
     parts.append(section("ui", [("logo_pic", "logo.pic", True), ("logo_pal", "logo.pal", False),
                                 ("title_bg1_map", "title_bg1.map", False), ("font_pic", "font.pic", True),
                                 ("ui_pal", "ui.pal", False)]))
+    parts.append("; Pickups, props and weapon shots " + "-" * 37)
+    parts.append(section("items", [("items_pic", "items.pic", False), ("items_pal", "items.pal", False)]))
     parts.append("; Heroes " + "-" * 62)
     parts.append(section("jon", [("jon_pic", "jon.pic", False), ("jon_pal", "jon.pal", False),
                                  ("jon_dim_pal", "jon_dim.pal", False)]))
@@ -55,10 +57,13 @@ def main():
                                       ("bonus_obj_pal", "bonus_obj.pal", False)]))
     parts.append(section("race_bg", [("race_bg1_pic", "race_bg1.pic", True), ("race_bg1_map", "race_bg1.map", False),
                                      ("race_bg2_pic", "race_bg2.pic", True), ("race_bg2_map", "race_bg2.map", False),
-                                     ("race_bg_pal", "race_bg.pal", False)]))
+                                     ("race_bg_pal", "race_bg.pal", False),
+                                     ("race_bg_night_pal", "race_bg_night.pal", False),
+                                     ("race_bg_dusk_pal", "race_bg_dusk.pal", False)]))
     parts.append("; The Range " + "-" * 59)
     parts.append(section("range_bg", [("range_bg1_pic", "range_bg1.pic", True), ("range_bg1_map", "range_bg1.map", False),
                                       ("range_bg_pal", "range_bg.pal", False),
+                                      ("range_bg_dusk_pal", "range_bg_dusk.pal", False),
                                       ("range_big", "range_big.pic", False), ("range_small", "range_small.pic", False)]))
     parts.append(section("range_bg2", [("range_bg2_pic", "range_bg2.pic", True),
                                        ("range_bg2_map", "range_bg2.map", False)]))
@@ -73,8 +78,8 @@ def main():
          "char *a_map, *a_bg1pic, *a_tiledef, *a_tileprop, *a_bgpal, *a_hero;",
          "char *a_bg2pic, *a_bg2map, *a_foes, *a_small, *a_boss, *a_spra, *a_sprb, *a_bosspal;",
          "u16 a_bg1size, a_bg2size;",
-         "u16 *a_foetab, *a_hearttab;",
-         "u16 a_nfoes, a_nhearts, a_arenax;", ""]
+         "u16 *a_foetab, *a_hearttab, *a_proptab, *a_cptab;",
+         "u16 a_nfoes, a_nhearts, a_nprops, a_arenax;", ""]
     for n in range(1, NSTAGES + 1):
         c.append("extern char " + ", ".join(f"st{n}_{k}" for k in names) + ";")
     c.append("")
@@ -108,6 +113,9 @@ def main():
         c.append(f"        a_hearttab = (u16 *){p}_hearttab;")
         c.append(f"        a_nfoes = ST{n}_NFOES;")
         c.append(f"        a_nhearts = ST{n}_NHEARTS;")
+        c.append(f"        a_proptab = (u16 *){p}_proptab;")
+        c.append(f"        a_cptab = (u16 *){p}_cptab;")
+        c.append(f"        a_nprops = ST{n}_NPROPS;")
         c.append(f"        a_arenax = ST{n}_ARENA_X;")
         c.append("        break;")
     c.append("    }")

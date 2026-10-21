@@ -509,6 +509,32 @@ def main():
         for p in pals:
             f.write(palette_bytes([snes_color(c) for c in p]))
 
+    # night and sunset versions of the road for the later races
+    def tint(pal, mul, add, keep=()):
+        return [c if i in keep or i == 0 else tuple(max(0, min(255, int(v * m + a))) for v, m, a in zip(c, mul, add))
+                for i, c in enumerate(pal)]
+
+    def write_pals(name, p0, p1, p2):
+        pals = [[(0, 0, 0)] * 16 for _ in range(8)]
+        pals[0][0] = p2[4]
+        pals[1], pals[2] = p1, p2
+        with open(os.path.join(BUILD, name), "wb") as f:
+            for p in pals:
+                f.write(palette_bytes([snes_color(c) for c in p]))
+
+    road_n = tint(P_ROAD, (0.45, 0.45, 0.6), (0, 0, 10), keep=(5, 6, 14, 15))
+    coast_n = tint(P_COAST, (0.3, 0.3, 0.45), (4, 6, 30))
+    coast_n[2:5] = [(16, 20, 54), (22, 28, 70), (30, 38, 88)]
+    coast_n[5:7] = [(70, 76, 110), (50, 56, 90)]
+    coast_n[15] = (240, 240, 210)
+    write_pals("race_bg_night.pal", None, road_n, coast_n)
+    road_d = tint(P_ROAD, (1.0, 0.82, 0.7), (20, 0, 0), keep=(5, 6))
+    coast_d = tint(P_COAST, (1.0, 0.75, 0.65), (30, 0, 10))
+    coast_d[2:5] = [(250, 170, 100), (240, 130, 90), (210, 100, 100)]
+    coast_d[5:7] = [(255, 220, 170), (250, 190, 140)]
+    coast_d[15] = (255, 230, 120)
+    write_pals("race_bg_dusk.pal", None, road_d, coast_d)
+
     # range
     front = range_front()
     tilemap_export(front, lambda tx, ty: 1, "range_bg1")
@@ -520,6 +546,11 @@ def main():
     with open(os.path.join(BUILD, "range_bg.pal"), "wb") as f:
         for p in pals:
             f.write(palette_bytes([snes_color(c) for c in p]))
+    rng_d = tint(P_RANGE, (0.8, 0.62, 0.62), (24, 4, 10), keep=(12, 13))
+    sky_d = tint(P_RANGE_SKY, (0.9, 0.6, 0.6), (30, 0, 20))
+    sky_d[2:5] = [(250, 160, 110), (230, 120, 100), (180, 90, 110)]
+    sky_d[5:7] = [(255, 210, 170), (240, 180, 150)]
+    write_pals("range_bg_dusk.pal", None, rng_d, sky_d)
     rbig = [plate(0).px, plate(1).px, plate(2).px]
     open(os.path.join(BUILD, "range_big.pic"), "wb").write(grid_pic(rbig, 32))
     rsmall = [crosshair(0), crosshair(1), bottle(False), bottle(True), clay(0), clay(1), clay(2),

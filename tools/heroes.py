@@ -153,7 +153,9 @@ def shoe(foot, color):
 def run_leg(p):
     """Leg pose over the run cycle: thigh swings, knee folds as the foot comes back."""
     thigh = 42 * math.sin(p)
-    bend = 14 + 70 * max(0.0, math.sin(p - math.pi / 2)) ** 1.3
+    # the knee folds while the thigh swings forward (the foot is off the
+    # ground), and the leg straightens as it plants and pushes back
+    bend = 14 + 70 * max(0.0, math.cos(p)) ** 1.3
     return thigh, bend
 
 
@@ -173,7 +175,8 @@ def pose(name):
         ph = i / 8 * 2 * math.pi
         bob = [0, 1, 1, 0, 0, 1, 1, 0][i]
         swing = 38 * math.sin(ph)
-        return 1, bob, run_leg(ph + math.pi), run_leg(ph), (-swing, 75), (swing, 75)
+        # each arm swings against the leg on its own side
+        return 1, bob, run_leg(ph + math.pi), run_leg(ph), (swing, 75), (-swing, 75)
     if name == "jump":
         return 1, -1, (-20, 30), (55, 95), (-50, 40), (60, 70)
     if name == "apex":

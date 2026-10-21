@@ -308,6 +308,7 @@ def build_level():
     amps(115, 10)
     amps(115, 8, big=True)
     lv.foe(FOE_C, 119, 117, 123, row=9)
+    amps(119, 10)                                   # a step up to the speaker
     lv.solid(121, 8, speaker_tower(), A)
     lv.foe(FOE_B, 128, 124, 134)
     lv.deco(126, 11, guitar_case(), A)
@@ -321,6 +322,7 @@ def build_level():
     lv.deco(156, 9, mic_stand(), A)
     amps(158, 10)
     lv.foe(FOE_C, 162, 160, 166, row=9)
+    amps(162, 10)
     lv.solid(164, 8, speaker_tower(), A)
     # D: the jam stage (boss arena)
     a0 = LEVEL_W_MT - ARENA_MT

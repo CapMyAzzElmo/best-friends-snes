@@ -10,6 +10,7 @@ export ROMTITLE := COMRADES
 # 1MB LoROM
 export ROMSIZE := 0A
 export ROMBANKS := 32
+export FASTROM := 1
 
 # music and sound effects (SNESMOD); the effects module must come first
 SMCONVFLAGS := -s -o build/soundbank -V -b 5 -f
@@ -23,7 +24,7 @@ include ${PVSNESLIB_HOME}/devkitsnes/snes_rules
 
 STAGES := tools/stages/s1_ffa.py tools/stages/s2_jam.py tools/stages/s3_bar.py tools/stages/s4_chicago.py \
 	tools/stages/s5_court.py tools/stages/s6_golden.py
-GEN := tools/heroes.py tools/critters.py tools/sprites_build.py $(STAGES) tools/stagekit.py tools/foes.py \
+GEN := tools/heroes.py tools/critters.py tools/sprites_build.py $(STAGES) tools/stagekit.py tools/foes.py tools/items.py \
 	tools/bonus.py tools/font.py tools/title.py tools/music.py tools/gen_data.py
 
 all: assets $(ROMNAME).sfc
@@ -36,6 +37,7 @@ build/.stamp: $(GEN) tools/pixel.py tools/snesgfx.py tools/itwriter.py
 	python3 tools/sprites_build.py
 	for s in $(STAGES); do python3 $$s || exit 1; done
 	python3 tools/foes.py
+	python3 tools/items.py
 	python3 tools/bonus.py
 	python3 tools/font.py
 	python3 tools/title.py

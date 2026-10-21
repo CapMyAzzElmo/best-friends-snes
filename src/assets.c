@@ -4,8 +4,8 @@
 char *a_map, *a_bg1pic, *a_tiledef, *a_tileprop, *a_bgpal, *a_hero;
 char *a_bg2pic, *a_bg2map, *a_foes, *a_small, *a_boss, *a_spra, *a_sprb, *a_bosspal;
 u16 a_bg1size, a_bg2size;
-u16 *a_foetab, *a_hearttab;
-u16 a_nfoes, a_nhearts, a_arenax;
+u16 *a_foetab, *a_hearttab, *a_proptab, *a_cptab;
+u16 a_nfoes, a_nhearts, a_nprops, a_arenax;
 
 extern char st1_map, st1_bg1_pic, st1_bg1_pic_end, st1_tiledef, st1_tileprop, st1_bg_pal, st1_hero, st1_bg2_pic, st1_bg2_pic_end, st1_bg2_map, st1_foes, st1_small, st1_boss, st1_spra, st1_sprb, st1_bosspal;
 extern char st2_map, st2_bg1_pic, st2_bg1_pic_end, st2_tiledef, st2_tileprop, st2_bg_pal, st2_hero, st2_bg2_pic, st2_bg2_pic_end, st2_bg2_map, st2_foes, st2_small, st2_boss, st2_spra, st2_sprb, st2_bosspal;
@@ -46,6 +46,9 @@ void loadStageAssets(u8 s)
         a_hearttab = (u16 *)st1_hearttab;
         a_nfoes = ST1_NFOES;
         a_nhearts = ST1_NHEARTS;
+        a_proptab = (u16 *)st1_proptab;
+        a_cptab = (u16 *)st1_cptab;
+        a_nprops = ST1_NPROPS;
         a_arenax = ST1_ARENA_X;
         break;
     case 1:
@@ -69,6 +72,9 @@ void loadStageAssets(u8 s)
         a_hearttab = (u16 *)st2_hearttab;
         a_nfoes = ST2_NFOES;
         a_nhearts = ST2_NHEARTS;
+        a_proptab = (u16 *)st2_proptab;
+        a_cptab = (u16 *)st2_cptab;
+        a_nprops = ST2_NPROPS;
         a_arenax = ST2_ARENA_X;
         break;
     case 2:
@@ -92,6 +98,9 @@ void loadStageAssets(u8 s)
         a_hearttab = (u16 *)st3_hearttab;
         a_nfoes = ST3_NFOES;
         a_nhearts = ST3_NHEARTS;
+        a_proptab = (u16 *)st3_proptab;
+        a_cptab = (u16 *)st3_cptab;
+        a_nprops = ST3_NPROPS;
         a_arenax = ST3_ARENA_X;
         break;
     case 3:
@@ -115,6 +124,9 @@ void loadStageAssets(u8 s)
         a_hearttab = (u16 *)st4_hearttab;
         a_nfoes = ST4_NFOES;
         a_nhearts = ST4_NHEARTS;
+        a_proptab = (u16 *)st4_proptab;
+        a_cptab = (u16 *)st4_cptab;
+        a_nprops = ST4_NPROPS;
         a_arenax = ST4_ARENA_X;
         break;
     case 4:
@@ -138,6 +150,9 @@ void loadStageAssets(u8 s)
         a_hearttab = (u16 *)st5_hearttab;
         a_nfoes = ST5_NFOES;
         a_nhearts = ST5_NHEARTS;
+        a_proptab = (u16 *)st5_proptab;
+        a_cptab = (u16 *)st5_cptab;
+        a_nprops = ST5_NPROPS;
         a_arenax = ST5_ARENA_X;
         break;
     case 5:
@@ -161,6 +176,9 @@ void loadStageAssets(u8 s)
         a_hearttab = (u16 *)st6_hearttab;
         a_nfoes = ST6_NFOES;
         a_nhearts = ST6_NHEARTS;
+        a_proptab = (u16 *)st6_proptab;
+        a_cptab = (u16 *)st6_cptab;
+        a_nprops = ST6_NPROPS;
         a_arenax = ST6_ARENA_X;
         break;
     }

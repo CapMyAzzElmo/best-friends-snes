@@ -4,17 +4,20 @@ effects module comes first and the game plays stage N as MOD_STAGE1 + N.
 
   sfx.it      sound effect samples
   title.it    "Comrades", the title theme
-  stage1.it   "FFA Hoedown"           fiddle hoedown, G major, 150 BPM
-  stage2.it   "Jam Sessions"          garage pop rock, E major, 124 BPM
-  stage3.it   "Last Call"             punk rock, A major, 184 BPM
-  stage4.it   "Lakefront"             festival house groove, D minor, 124 BPM
-  stage5.it   "Order in the Court"    castle march, A minor, 104 BPM
-  stage6.it   "Shuffleboard Shuffle"  easy swing, C major, 100 BPM
-  boss.it     "Showdown"              driving minor rock, 164 BPM
+  stage1.it   "FFA Hoedown"           fiddle hoedown, G major, 168 BPM
+  stage2.it   "Jam Sessions"          pop punk, E major, 156 BPM
+  stage3.it   "Last Call"             punk rock, A major, 196 BPM
+  stage4.it   "Lakefront"             festival house groove, D minor, 140 BPM
+  stage5.it   "Order in the Court"    galloping castle rock, A minor, 144 BPM
+  stage6.it   "Shuffleboard Shuffle"  hot swing, C major, 150 BPM
+  boss.it     "Showdown"              driving minor rock, 180 BPM
   clear.it    stage clear fanfare (plays once)
-  race.it     "Coast Highway"         fast rock, D major, 172 BPM
-  range.it    "High Noon"             spaghetti western, A minor, 132 BPM
+  race.it     "Coast Highway"         fast rock, D major, 184 BPM
+  range.it    "High Noon"             spaghetti western, A minor, 156 BPM
   ending.it   "Comrades for Life"     slow reprise of the title
+
+Each song runs 32 bars (verse, chorus, verse, chorus, with the arpeggio
+voice joining in) before it loops.
 
 Instruments are synthesised here: leads (saw fiddle, square, soft pulse,
 whistle, overdriven guitar), a round bass, chord and arpeggio voices, and
@@ -384,6 +387,46 @@ def song(path, title, kit, tempo, prog, melody, bass="root5", comp="chuck", drum
              speed=speed, tempo=tempo, nchan=len(tracks), pans=PANS[:len(tracks)])
 
 
+def shift(tr, rows):
+    out = Track()
+    for r, c in tr.cells.items():
+        out.put(r + rows, c)
+    return out
+
+
+def merge(dst, src):
+    for r, c in src.cells.items():
+        dst.put(r, c)
+
+
+def song2(path, title, kit, tempo, sections, bass="root5", comp="chuck", drums="rock", arp=None,
+          lead_vol=None, speed=6):
+    """A song made of 8 bar sections, each with its own chord progression and
+    melody: sections = [(prog, melody, transpose, with_arp), ...]. The whole
+    song loops. Drum fills mark every fourth bar."""
+    samples, instruments = kit
+    lead, bs, t3, t5, ks, hh, ar = (Track() for _ in range(7))
+    row = 0
+    for prog, mel, tr, with_arp in sections:
+        mel = [parse_bar(b) if isinstance(b, str) else b for b in mel]
+        n = len(mel)
+        merge(lead, shift(melody_track(mel, LEAD, vol=lead_vol, transpose=tr), row))
+        merge(bs, shift(bass_track(prog, n, bass), row))
+        a3, a5 = comp_tracks(prog, n, comp)
+        merge(t3, shift(a3, row))
+        merge(t5, shift(a5, row))
+        k, h = drum_tracks(n, drums)
+        merge(ks, shift(k, row))
+        merge(hh, shift(h, row))
+        if arp and with_arp:
+            merge(ar, shift(arp_track(prog, n, **arp), row))
+        row += n * 16
+    tracks = [lead, bs, t3, t5, ks, hh] + ([ar] if arp else [])
+    pats = to_patterns(tracks, row)
+    write_it(os.path.join(BUILD, path), title, samples, instruments, pats, list(range(len(pats))),
+             speed=speed, tempo=tempo, nchan=len(tracks), pans=PANS[:len(tracks)])
+
+
 # ------------------------------------------------------------------ stage 1: FFA Hoedown
 FFA_PROG = ["G", "C", "D", "G", "G", "C", "Em D", "G", "C", "G", "Am", "D", "G", "Em", "C D", "G"]
 FFA_MELODY = [
@@ -404,11 +447,24 @@ FFA_MELODY = [
     [("E5", 2), ("G5", 2), ("C6", 4), ("D6", 2), ("C6", 2), ("A5", 4)],
     [("G5", 12), ("r", 4)],
 ]
+# the fiddle break: running eighths
+FFA_BREAK_PROG = ["G", "G", "C", "C", "D", "D", "G", "D"]
+FFA_BREAK = ["G5:2 F#5:2 G5:2 A5:2 B5:2 A5:2 G5:2 D5:2",
+             "E5:2 D5:2 B4:2 D5:2 G5:4 B5:4",
+             "C6:2 B5:2 A5:2 G5:2 E5:2 G5:2 C6:2 E6:2",
+             "D6:4 B5:2 G5:2 E5:4 C5:4",
+             "D5:2 F#5:2 A5:2 D6:2 C6:2 A5:2 F#5:2 A5:2",
+             "G5:2 F#5:2 E5:2 F#5:2 A5:4 D5:4",
+             "B4:2 D5:2 G5:2 B5:2 D6:2 B5:2 G5:2 B5:2",
+             "A5:2 G5:2 F#5:2 E5:2 D5:4 D5:2 D5:2"]
 
 
 def stage1():
-    song("stage1.it", "FFA Hoedown", song_kit("saw"), 150, FFA_PROG, FFA_MELODY,
-         bass="root5", comp="chuck", drums="hoedown")
+    a, b = FFA_PROG[:8], FFA_PROG[8:]
+    song2("stage1.it", "FFA Hoedown", song_kit("saw", arp="pulse12"), 168,
+          [(a, FFA_MELODY[:8], 0, False), (b, FFA_MELODY[8:], 0, True),
+           (FFA_BREAK_PROG, FFA_BREAK, 0, True), (a, FFA_MELODY[:8], 12, True)],
+          bass="root5", comp="chuck", drums="hoedown", arp=dict(step=2, vol=26))
 
 
 # ------------------------------------------------------------------ stage 2: Jam Sessions
@@ -422,8 +478,18 @@ def stage2():
            "F#5:4 D#5:4 B4:2 C#5:2 D#5:4",
            "C#5:2 E5:2 A5:4 G#5:2 F#5:2 E5:4",
            "F#5:8 D#5:4 B4:4"]
-    song("stage2.it", "Jam Sessions", song_kit("square", "pulse25"), 124, prog, mel,
-         bass="eighths", comp="strum", drums="rock", arp=dict(step=2, vol=30))
+    chorus_prog = ["A", "B", "G#m", "C#m", "A", "B", "E", "E"]
+    chorus = ["C#5:2 E5:2 A5:4 A5:2 G#5:2 F#5:2 E5:2",
+              "F#5:4 D#5:2 F#5:2 B5:4 r:4",
+              "G#5:2 B5:2 D#6:4 C#6:2 B5:2 G#5:4",
+              "C#6:4 B5:2 G#5:2 E5:4 C#5:4",
+              "C#5:2 E5:2 A5:4 B5:2 C#6:2 B5:4",
+              "A5:2 F#5:2 D#5:4 F#5:2 A5:2 B5:4",
+              "G#5:4 E5:2 G#5:2 B5:4 E6:4",
+              "E6:8 r:4 B4:2 B4:2"]
+    song2("stage2.it", "Jam Sessions", song_kit("square", "pulse25"), 156,
+          [(prog, mel, 0, False), (chorus_prog, chorus, 0, True), (prog, mel, 0, True), (chorus_prog, chorus, 0, True)],
+          bass="eighths", comp="strum", drums="rock", arp=dict(step=2, vol=28))
 
 
 # ------------------------------------------------------------------ stage 3: Last Call (punk)
@@ -437,8 +503,18 @@ def stage3():
            "D5:4 C#5:2 B4:2 A4:8",
            "B4:2 C#5:2 E5:4 G#5:2 B5:2 E5:4",
            "E5:8 r:4 E5:2 E5:2"]
-    song("stage3.it", "Last Call", song_kit("dist", "dist", chord_env=[(0, 50), (4, 40), (8, 0)], chord_vol=44),
-         184, prog, mel, bass="eighths", comp="power", drums="punk")
+    bprog = ["D5", "E5", "C#5", "F#5", "D5", "E5", "A5", "A5"]
+    bmel = ["F#5:2 F#5:2 F#5:2 E5:2 D5:4 A4:4",
+            "E5:2 E5:2 E5:2 F#5:2 G#5:4 B5:4",
+            "C#6:4 B5:2 A5:2 G#5:4 E5:4",
+            "F#5:4 A5:4 C#6:8",
+            "D6:2 C#6:2 A5:2 F#5:2 D5:4 F#5:4",
+            "E5:2 G#5:2 B5:2 E6:2 D6:2 C#6:2 B5:4",
+            "A5:4 C#6:4 E6:4 C#6:4",
+            "A5:8 r:4 A4:2 A4:2"]
+    song2("stage3.it", "Last Call", song_kit("dist", "dist", chord_env=[(0, 50), (4, 40), (8, 0)], chord_vol=44),
+          196, [(prog, mel, 0, False), (bprog, bmel, 0, False), (prog, mel, 12, False), (bprog, bmel, 0, False)],
+          bass="eighths", comp="power", drums="punk")
 
 
 # ------------------------------------------------------------------ stage 4: Lakefront (festival groove)
@@ -452,8 +528,18 @@ def stage4():
            "Bb5:4 A5:2 F5:2 D5:4 r:4",
            "G5:2 G5:2 Bb5:2 A5:2 G5:4 F5:4",
            "E5:4 C#5:4 A4:4 r:4"]
-    song("stage4.it", "Lakefront", song_kit("pulse12", "pulse25", "square"), 124, prog, mel,
-         bass="synco", comp="stab", drums="four", arp=dict(step=1, vol=24))
+    bprog = ["Bb", "C", "Am7", "Dm7", "Bb", "C", "A7", "A7"]
+    bmel = ["F5:2 F5:2 D5:2 F5:2 r:2 G5:2 A5:4",
+            "G5:2 G5:2 E5:2 G5:2 r:2 A5:2 Bb5:4",
+            "A5:3 G5:3 E5:2 C5:4 E5:4",
+            "D5:2 F5:2 A5:2 D6:2 C6:4 A5:4",
+            "Bb5:2 A5:2 F5:2 D5:2 r:2 F5:2 Bb5:4",
+            "C6:2 Bb5:2 G5:2 E5:2 r:2 G5:2 C6:4",
+            "C#6:4 A5:4 E5:4 G5:4",
+            "A5:2 G5:2 F5:2 E5:2 C#5:4 A4:4"]
+    song2("stage4.it", "Lakefront", song_kit("pulse12", "pulse25", "square"), 140,
+          [(prog, mel, 0, True), (bprog, bmel, 0, True), (prog, mel, 12, True), (bprog, bmel, 0, True)],
+          bass="synco", comp="stab", drums="four", arp=dict(step=1, vol=22))
 
 
 # ------------------------------------------------------------------ stage 5: Order in the Court
@@ -467,9 +553,19 @@ def stage5():
            "E5:4 G5:4 C6:4 B5:2 A5:2",
            "F5:2 E5:2 D5:4 B4:2 C5:2 D5:2 G#5:2",
            "A5:12 r:4"]
-    song("stage5.it", "Order in the Court",
-         song_kit("organ", "pulse12", "pulse12", chord_env=[(0, 50), (20, 30), (60, 0)]),
-         104, prog, mel, bass="walk", comp="march", drums="march", arp=dict(step=2, vol=30))
+    bprog = ["F", "G", "Em", "Am", "Dm", "E", "F E", "Am"]
+    bmel = ["A5:4 C6:4 F5:4 A5:4",
+            "B5:4 D6:4 G5:4 B5:4",
+            "G5:2 F5:2 E5:2 F5:2 G5:4 B5:4",
+            "C6:2 B5:2 A5:2 G5:2 A5:8",
+            "D5:2 F5:2 A5:2 D6:2 C6:2 A5:2 F5:4",
+            "E5:2 G#5:2 B5:2 E6:2 D6:2 B5:2 G#5:4",
+            "A5:2 G5:2 F5:4 E5:2 D5:2 C5:2 B4:2",
+            "A4:8 r:4 E5:2 E5:2"]
+    song2("stage5.it", "Order in the Court",
+          song_kit("organ", "dist", "pulse12", chord_env=[(0, 50), (4, 38), (10, 0)], chord_vol=40),
+          144, [(prog, mel, 0, False), (bprog, bmel, 0, True), (prog, mel, 0, True), (bprog, bmel, 0, True)],
+          bass="gallop", comp="power", drums="gallop", arp=dict(step=2, vol=26))
 
 
 # ------------------------------------------------------------------ stage 6: Shuffleboard Shuffle
@@ -483,8 +579,19 @@ def stage6():
            "C#5:3 E5:1 A5:4 G5:4 E5:4",
            "F5:3 A5:1 D6:4 B5:3 G5:1 F5:4",
            "E5:8 C5:4 r:4"]
-    song("stage6.it", "Shuffleboard Shuffle", song_kit("whistle", "pulse25", chord_env=[(0, 44), (8, 30), (24, 0)]),
-         100, prog, mel, bass="walk", comp="swing", drums="swing", second_half="repeat")
+    bprog = ["F", "C", "D7", "G7", "C", "A7", "D7 G7", "C"]
+    bmel = ["A5:3 C6:1 A5:4 F5:4 A5:4",
+            "G5:3 E5:1 C5:4 E5:4 G5:4",
+            "F#5:3 A5:1 D6:4 C6:4 A5:4",
+            "B5:3 A5:1 G5:4 F5:4 D5:4",
+            "E5:3 G5:1 C6:4 E6:4 C6:4",
+            "C#6:3 A5:1 E5:4 G5:4 A5:4",
+            "F5:2 A5:2 D6:2 C6:2 B5:2 A5:2 G5:2 F5:2",
+            "E5:4 G5:4 C6:8"]
+    song2("stage6.it", "Shuffleboard Shuffle",
+          song_kit("whistle", "pulse25", chord_env=[(0, 44), (8, 30), (24, 0)]), 150,
+          [(prog, mel, 0, False), (bprog, bmel, 0, True), (prog, mel, 0, True), (bprog, bmel, 0, True)],
+          bass="walk", comp="swing", drums="swing", arp=dict(step=4, vol=24))
 
 
 # ------------------------------------------------------------------ boss: Showdown
@@ -498,8 +605,18 @@ def boss():
            "G5:2 F#5:2 E5:4 G5:4 C6:4",
            "B5:4 A5:4 G5:2 F#5:2 E5:4",
            "D#5:8 F#5:4 B5:4"]
-    song("boss.it", "Showdown", song_kit("dist", "pulse25", "square"), 164, prog, mel,
-         bass="sixteenths", comp="offbeat", drums="drive")
+    bprog = ["C", "D", "Em", "Em", "C", "D", "B", "B"]
+    bmel = ["C6:2 B5:2 G5:2 E5:2 C5:4 E5:4",
+            "D6:2 C6:2 A5:2 F#5:2 D5:4 F#5:4",
+            "E5:2 G5:2 B5:2 E6:2 D6:2 B5:2 G5:2 B5:2",
+            "E6:8 B5:4 G5:4",
+            "C6:2 B5:2 G5:2 E5:2 C5:2 E5:2 G5:2 C6:2",
+            "D6:2 C6:2 A5:2 F#5:2 D5:2 F#5:2 A5:2 D6:2",
+            "D#6:4 B5:4 F#5:4 A5:4",
+            "B5:2 A5:2 G5:2 F#5:2 D#5:8"]
+    song2("boss.it", "Showdown", song_kit("dist", "pulse25", "square"), 180,
+          [(prog, mel, 0, False), (bprog, bmel, 0, True), (prog, mel, 0, True), (bprog, bmel, 0, True)],
+          bass="sixteenths", comp="offbeat", drums="drive", arp=dict(step=1, vol=20))
 
 
 # ------------------------------------------------------------------ race: Coast Highway
@@ -513,8 +630,19 @@ def race():
            "C6:4 G5:2 E5:2 G5:4 C6:4",
            "B5:2 A5:2 G5:4 D5:4 B5:4",
            "A5:8 C#6:4 E6:4"]
-    song("race.it", "Coast Highway", song_kit("square", "dist", chord_env=[(0, 48), (4, 36), (8, 0)], chord_vol=40),
-         172, prog, mel, bass="eighths", comp="power", drums="drive")
+    bprog = ["G", "A", "Bm", "G", "G", "A", "D", "D"]
+    bmel = ["B5:2 D6:2 B5:2 G5:2 D5:4 G5:4",
+            "C#6:2 E6:2 C#6:2 A5:2 E5:4 A5:4",
+            "D6:4 B5:2 F#5:2 D5:4 F#5:4",
+            "G5:2 A5:2 B5:2 D6:2 E6:8",
+            "D6:2 B5:2 G5:2 B5:2 D6:2 G6:2 D6:2 B5:2",
+            "C#6:2 A5:2 E5:2 A5:2 C#6:2 E6:2 C#6:2 A5:2",
+            "D6:4 F#5:4 A5:4 D6:4",
+            "D6:8 r:4 A5:2 A5:2"]
+    song2("race.it", "Coast Highway",
+          song_kit("square", "dist", chord_env=[(0, 48), (4, 36), (8, 0)], chord_vol=40), 184,
+          [(prog, mel, 0, False), (bprog, bmel, 0, True), (prog, mel, 0, True), (bprog, bmel, 0, True)],
+          bass="eighths", comp="power", drums="drive", arp=dict(step=2, vol=24))
 
 
 # ------------------------------------------------------------------ range: High Noon
@@ -528,22 +656,26 @@ def range_theme():
            "G5:2 D5:2 B4:4 D5:4 G5:4",
            "F5:2 E5:2 F5:2 A5:2 C6:4 B5:2 A5:2",
            "B5:8 G#5:4 E5:4"]
-    song("range.it", "High Noon", song_kit("whistle", "pulse12", chord_env=[(0, 50), (6, 30), (14, 0)]),
-         132, prog, mel, bass="gallop", comp="offbeat", drums="gallop", second_half="repeat")
+    bprog = ["F", "C", "G", "Am", "F", "C", "E", "E"]
+    bmel = ["A5:2 C6:2 F6:4 E6:2 C6:2 A5:4",
+            "G5:2 C6:2 E6:4 D6:2 C6:2 G5:4",
+            "B5:4 D6:4 G5:4 B5:4",
+            "A5:2 B5:2 C6:2 E6:2 A5:8",
+            "F5:2 A5:2 C6:2 F6:2 E6:2 C6:2 A5:4",
+            "E5:2 G5:2 C6:2 E6:2 D6:2 C6:2 G5:4",
+            "G#5:4 B5:4 E6:4 D6:4",
+            "E6:8 B5:4 G#5:4"]
+    song2("range.it", "High Noon", song_kit("whistle", "pulse12", chord_env=[(0, 50), (6, 30), (14, 0)]), 156,
+          [(prog, mel, 0, False), (bprog, bmel, 0, True), (prog, mel, 0, True), (bprog, bmel, 0, True)],
+          bass="gallop", comp="offbeat", drums="gallop", arp=dict(step=2, vol=22))
 
 
 # ------------------------------------------------------------------ title and ending
 def title_theme():
-    samples, instruments = song_kit("saw")
-    nbars = 16
-    lead = melody_track(FFA_MELODY[8:] + FFA_MELODY[8:], LEAD, vol=44, transpose=-12)
-    bass = Track()
-    for b in range(nbars):
-        for k, c in enumerate(bar_chords(FFA_PROG, b)):
-            bass.put(b * 16 + k * 8, Cell(note=chord_notes(c)[0], ins=BASS, vol=48))
-    pats = to_patterns([lead, bass, arp_track(FFA_PROG, nbars)], nbars * 16)
-    write_it(os.path.join(BUILD, "title.it"), "Comrades", samples, instruments, pats,
-             [0, 1, 2, 3], speed=6, tempo=110, nchan=3, pans=[32, 32, 32])
+    a, b = FFA_PROG[:8], FFA_PROG[8:]
+    song2("title.it", "Comrades", song_kit("saw", "pulse25", "pulse12"), 140,
+          [(a, FFA_MELODY[:8], 0, True), (b, FFA_MELODY[8:], 0, True)],
+          bass="eighths", comp="strum", drums="rock", arp=dict(step=2, vol=24))
 
 
 def ending_theme():
@@ -555,7 +687,7 @@ def ending_theme():
     ks, hh = drum_tracks(nbars, "soft")
     pats = to_patterns([lead, bass, t3, t5, ks, hh, arp_track(FFA_PROG, nbars, step=4, vol=24)], nbars * 16)
     write_it(os.path.join(BUILD, "ending.it"), "Comrades for Life", samples, instruments, pats,
-             [0, 1, 2, 3], speed=6, tempo=84, nchan=7, pans=PANS[:7])
+             [0, 1, 2, 3], speed=6, tempo=96, nchan=7, pans=PANS[:7])
 
 
 def clear_fanfare():
@@ -611,7 +743,7 @@ def tone(freqs, dur_each, shape="square", decay=10):
 
 
 SFX = ["jump", "throw", "splat", "stomp", "hurt", "bleat", "land", "heart", "bang", "ding", "crash", "boost",
-       "roar", "select", "powerup"]
+       "roar", "select", "powerup", "crack", "oneup"]
 
 
 def mix(*parts):
@@ -650,6 +782,10 @@ def sfx_samples():
     out["roar"] = mix(roar, noise(0.5, 4, 0.2, 13) * 0.5) * 24000
     out["select"] = lowpass(tone([990, 1320], 0.04, "square", 20), 0.5) * 12000
     out["powerup"] = lowpass(tone([523, 659, 784, 1047, 1319], 0.05, "square", 6), 0.5) * 14000
+    # a wooden crack: a sharp noise burst with a knock under it
+    out["crack"] = mix(noise(0.12, 30, 0.8, 21), sweep(420, 160, 0.1, "tri", 25) * 0.7,
+                       noise(0.05, 60, 0.95, 22) * 0.6) * 24000
+    out["oneup"] = lowpass(tone([659, 784, 1319, 1047, 1175, 1568], 0.07, "square", 5), 0.5) * 14000
     return [one_shot(k, out[k]) for k in SFX]
 
 

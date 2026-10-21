@@ -136,6 +136,10 @@ def build_font():
             for x in range(0, 8):
                 px[y][x] = 1 if y in (1, 6) else col
         tiles.append(px)
+    # 0x44: a little head for the lives counter, 0x45: a star (both drawn for BG3 palette 2)
+    for art in (["00111100", "01222210", "12322321", "12222221", "12122121", "12211221", "01222210", "00111100"],
+                ["00011000", "00122100", "11122111", "12222221", "01222210", "01211210", "11100111", "00000000"]):
+        tiles.append([[int(ch) for ch in row] for row in art])
     with open(os.path.join(BUILD, "font.pic"), "wb") as f:
         for t in tiles:
             f.write(tile_2bpp(t))

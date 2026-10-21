@@ -4,14 +4,16 @@
 
     A shooting gallery: steel plates pop up on their stands, bottles line the
     fence and clay pigeons sail across the sky. D-pad aims, B fires, Y
-    reloads. Score 25 in 40 seconds and the shooter earns the double shot.
+    reloads. Every hit is worth 100 points; score 25 in 40 seconds for an
+    extra life and the double shot. The second visit is at dusk, with quicker
+    targets.
 
 ---------------------------------------------------------------------------------*/
 #include "game.h"
 
 extern char range_big, range_small, bonus_obj_pal;
 extern char range_bg1_pic, range_bg1_pic_end, range_bg1_map, range_bg2_pic, range_bg2_pic_end, range_bg2_map,
-    range_bg_pal;
+    range_bg_pal, range_bg_dusk_pal;
 extern char font_pic, font_pic_end, ui_pal;
 
 #define GOAL 25
@@ -30,14 +32,15 @@ u16 cl_x[NCLAYS];
 s16 cl_y[NCLAYS], cl_vx[NCLAYS], cl_vy[NCLAYS];
 u8 cl_state[NCLAYS], cl_timer[NCLAYS];
 s16 cx, cy;
-u8 ammo, reload, cooldown, flash, score;
+u8 ammo, reload, cooldown, flash, score_r;    // score_r: targets hit this round
 u16 timeleft;
+u8 fast;
 
 void rangeHud(void)
 {
     u8 k;
     hudText(1, 1, "SCORE");
-    hudNumber(7, 1, score, 2);
+    hudNumber(7, 1, score_r, 2);
     hudText(11, 1, "/25");
     hudText(17, 1, "TIME");
     hudNumber(22, 1, timeleft / 60, 2);
@@ -53,7 +56,7 @@ void rangeHud(void)
 
 void rangeHit(u8 pts, s16 x, s16 y)
 {
-    score += pts;
+    score_r += pts;
     sfx(pts > 1 ? SFX_POWERUP : SFX_DING);
 }
 
@@ -97,17 +100,20 @@ void rangeShoot(void)
     }
 }
 
-u8 rangeRun(void)
+u8 rangeRun(u8 variant)
 {
+    char *bgpal;
     u8 k, done = 0, won = 0, lastsec = 0xFF;
     u16 endtimer = 0;
 
     setScreenOff();
     setBrightness(0);
     oamClear(0, 0);
-    setPalette(&range_bg_pal, 0, 256);
+    bgpal = variant ? &range_bg_dusk_pal : &range_bg_pal;
+    fast = variant;
+    setPalette(bgpal, 0, 256);
     setPalette(&ui_pal, 0, 24);
-    setPalette(&range_bg_pal, 0, 2);
+    setPalette(bgpal, 0, 2);
     setPalette(&bonus_obj_pal, 128 + 7 * 16, 32);
     dmaCopyVram(&range_bg1_pic, 0x2000, &range_bg1_pic_end - &range_bg1_pic);
     dmaCopyVram(&range_bg2_pic, 0x4000, &range_bg2_pic_end - &range_bg2_pic);
@@ -138,13 +144,13 @@ u8 rangeRun(void)
     cx = 128;
     cy = 120;
     ammo = AMMO;
-    reload = cooldown = flash = score = 0;
+    reload = cooldown = flash = score_r = 0;
     timeleft = TIME_FRAMES;
 
     hudClear();
-    hudTextPal(9, 4, "THE RANGE", 2);
+    hudTextPal(variant ? 7 : 11, 4, variant ? "DUSK AT THE RANGE" : "THE RANGE", 2);
     hudText(3, 6, hero == HERO_JON ? "JON STEPS UP TO THE LINE" : "WES STEPS UP TO THE LINE");
-    hudText(2, 8, "HIT 25 TO EARN THE DOUBLE SHOT");
+    hudText(4, 8, "HIT 25 FOR AN EXTRA LIFE");
     rangeHud();
     hudFlush();
     playMusic(MOD_RANGE);
@@ -233,7 +239,7 @@ u8 rangeRun(void)
                 if (pl_state[k] == 0)
                 {
                     pl_state[k] = 1;                    // pop up
-                    pl_timer[k] = 70 + (rnd() & 63);
+                    pl_timer[k] = (fast ? 45 : 70) + (rnd() & 63);
                 }
                 else if (pl_state[k] == 2)
                 {
@@ -256,7 +262,7 @@ u8 rangeRun(void)
                 if (bt_state[k] == 0)
                 {
                     bt_state[k] = 1;
-                    bt_timer[k] = 150;
+                    bt_timer[k] = fast ? 100 : 150;
                 }
                 else
                 {
@@ -295,16 +301,16 @@ u8 rangeRun(void)
                     // launch from the left or the right edge
                     cl_state[k] = 1;
                     cl_y[k] = 150 << 4;
-                    cl_vy[k] = -60 - (rnd() & 15);
+                    cl_vy[k] = -60 - (rnd() & 15) - (fast ? 8 : 0);
                     if (rnd() & 1)
                     {
                         cl_x[k] = 0;
-                        cl_vx[k] = 30 + (rnd() & 15);
+                        cl_vx[k] = 30 + (rnd() & 15) + (fast ? 10 : 0);
                     }
                     else
                     {
                         cl_x[k] = 250 << 4;
-                        cl_vx[k] = -30 - (rnd() & 15);
+                        cl_vx[k] = -30 - (rnd() & 15) - (fast ? 10 : 0);
                     }
                     sfx(SFX_THROW);
                 }
@@ -322,19 +328,22 @@ u8 rangeRun(void)
             if (timeleft == 0)
             {
                 done = 1;
-                won = score >= GOAL;
+                won = score_r >= GOAL;
                 hudClearRow(25);
                 hudClearRow(26);
                 if (won)
                 {
                     hudTextPal(9, 10, "SHARPSHOOTER!", 2);
-                    hudText(4, 12, hero == HERO_JON ? "JON EARNS THE DOUBLE SHOT" : "WES EARNS THE DOUBLE SHOT");
+                    hudText(8, 12, "AN EXTRA LIFE AND");
+                    hudText(5, 14, hero == HERO_JON ? "JON GETS THE DOUBLE SHOT" : "WES GETS THE DOUBLE SHOT");
                     playMusic(MOD_CLEAR);
                 }
                 else
                 {
                     hudTextPal(10, 10, "TIME'S UP", 2);
                     hudText(5, 12, "NEED 25 FOR THE PRIZE");
+                    hudNumber(10, 14, score_r, 2);
+                    hudText(13, 14, "HITS");
                     spcStop();
                 }
             }
@@ -369,7 +378,12 @@ u8 rangeRun(void)
         hudFlush();
     }
     fadeOut();
+    addScore((u16)score_r * 10);
     if (won)
+    {
         dblshot[hero] = 1;
+        if (lives < 99)
+            lives++;
+    }
     return won;
 }

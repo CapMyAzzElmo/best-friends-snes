@@ -5,13 +5,16 @@
     Jon's black Suzuki B-King and Wes's red Honda RC51 race down the coast
     highway to the diner. Up/Down change lanes, B opens the throttle. Cones
     and traffic knock you down, oil spins you out, arrows give a boost.
-    Win the race and the rider earns an extra heart.
+    Win the race and the rider earns an extra heart (or a life once at five).
+    Three runs over the game: by day, at midnight and at sunset, each with
+    the cones and traffic shuffled and a quicker rival.
 
 ---------------------------------------------------------------------------------*/
 #include "game.h"
 
 extern char race_big, race_small, jonbike_pal, wesbike_pal, bonus_obj_pal;
 extern char race_bg1_pic, race_bg1_pic_end, race_bg1_map, race_bg2_pic, race_bg2_pic_end, race_bg2_map, race_bg_pal;
+extern char race_bg_night_pal, race_bg_dusk_pal;
 extern char font_pic, font_pic_end, ui_pal;
 
 #define RACE_LEN 9600
@@ -50,7 +53,9 @@ const u16 course[] = {
 #define NOBS 45
 
 u16 ob_x[NOBS];
-u8 ob_hit[NOBS];
+u8 ob_hit[NOBS], ob_lane[NOBS], ob_type[NOBS];
+s16 ob_y[NOBS];
+u8 obfirst;
 u16 pdist, pfrac, rdist, rfrac;
 s16 pspeed, rspeed, py, ry;
 u8 pcrash, pspin, pboost, rlane, rcrash;
@@ -85,9 +90,10 @@ void raceDrawBike(u8 who, s16 sx, s16 y, u8 f)
     drawBig(sx + 32, y - 32, base + f + 1, ATTR_SPRITE(pal), &race_big);
 }
 
-u8 raceRun(void)
+u8 raceRun(u8 variant)
 {
-    u16 i, endtimer = 0;
+    u16 i, endtimer = 0, *c;
+    char *bgpal;
     s16 sx, oy;
     u8 f, finished = 0, won = 0, t, rival;
     u16 scroll2 = 0;
@@ -95,9 +101,10 @@ u8 raceRun(void)
     setScreenOff();
     setBrightness(0);
     oamClear(0, 0);
-    setPalette(&race_bg_pal, 0, 256);
+    bgpal = variant == 1 ? &race_bg_night_pal : (variant == 2 ? &race_bg_dusk_pal : &race_bg_pal);
+    setPalette(bgpal, 0, 256);
     setPalette(&ui_pal, 0, 24);
-    setPalette(&race_bg_pal, 0, 2);
+    setPalette(bgpal, 0, 2);
     setPalette(&jonbike_pal, 128 + 3 * 16, 32);
     setPalette(&wesbike_pal, 128 + 4 * 16, 32);
     setPalette(&bonus_obj_pal, 128 + 7 * 16, 32);
@@ -113,11 +120,18 @@ u8 raceRun(void)
     spritesReset();
 
     rival = hero ^ 1;
+    c = (u16 *)course;
     for (i = 0; i < NOBS; i++)
     {
-        ob_x[i] = course[i * 3];
+        ob_x[i] = c[0];
+        // later runs mirror or shift the lanes so the course feels new
+        ob_lane[i] = variant == 1 ? 2 - c[1] : (variant == 2 ? (c[1] + 1 + (i & 1)) % 3 : c[1]);
+        ob_type[i] = c[2];
+        ob_y[i] = laneY(ob_lane[i]);
         ob_hit[i] = 0;
+        c += 3;
     }
+    obfirst = 0;
     pdist = 0;
     rdist = 0;
     pfrac = rfrac = 0;
@@ -130,8 +144,8 @@ u8 raceRun(void)
     rtimer = 0;
 
     hudClear();
-    hudTextPal(1, 1, "ROAD RIDE", 2);
-    hudText(13, 1, "RACE TO THE DINER!");
+    hudTextPal(1, 1, variant == 1 ? "MIDNIGHT RUN" : (variant == 2 ? "SUNSET RIDE" : "ROAD RIDE"), 2);
+    hudText(variant == 0 ? 13 : 16, 1, variant == 1 ? "RACE HOME!" : (variant == 2 ? "TO THE PIER!" : "RACE TO THE DINER!"));
     hudText(1, 2, "GO");
     raceHud();
     hudText(9, 12, "READY...");
@@ -213,9 +227,9 @@ u8 raceRun(void)
         }
         else
         {
-            s16 target = 0x3D0;
+            s16 target = 0x3D0 + variant * 0x18;
             if (rdist + 240 < pdist)
-                target = 0x470;
+                target = 0x470 + variant * 0x10;
             else if (rdist > pdist + 320)
                 target = 0x340;
             if (rspeed < target)
@@ -231,15 +245,19 @@ u8 raceRun(void)
         if (ry > laneY(rlane))
             ry -= 1;
 
-        // ---- obstacles
-        for (i = 0; i < NOBS; i++)
+        // ---- obstacles: only the stretch of road around the riders
+        while (obfirst < NOBS && ob_x[obfirst] + 400 < pdist && ob_x[obfirst] + 400 < rdist)
+            obfirst++;
+        for (i = obfirst; i < NOBS; i++)
         {
-            t = course[i * 3 + 2];
+            if (ob_x[i] > pdist + 320 && ob_x[i] > rdist + 160)
+                break;
+            t = ob_type[i];
             if (t == O_CAR && ob_x[i] < RACE_LEN + 400)
                 ob_x[i] += 2;                           // slow traffic still moves
-            oy = laneY(course[i * 3 + 1]);
+            oy = ob_y[i];
             // the rival looks ahead and switches lanes around trouble
-            if (t != O_BOOST && ob_x[i] > rdist + 40 && ob_x[i] < rdist + 140 && course[i * 3 + 1] == rlane)
+            if (t != O_BOOST && ob_x[i] > rdist + 40 && ob_x[i] < rdist + 140 && ob_lane[i] == rlane)
                 rlane = (rlane == 2) ? 1 : rlane + 1;
             if (ob_hit[i])
                 continue;
@@ -273,8 +291,12 @@ u8 raceRun(void)
             hudClearRow(10);
             if (won)
             {
-                hudTextPal(9, 10, "YOU WIN!", 2);
-                hudText(6, 12, hero == HERO_JON ? "JON EARNS +1 HEART" : "WES EARNS +1 HEART");
+                hudTextPal(12, 10, "YOU WIN!", 2);
+                if (hpmax[hero] < 5)
+                    hudText(7, 12, hero == HERO_JON ? "JON EARNS +1 HEART" : "WES EARNS +1 HEART");
+                else
+                    hudText(8, 12, "AN EXTRA LIFE!");
+                hudText(9, 14, "+2000 POINTS");
                 playMusic(MOD_CLEAR);
             }
             else
@@ -312,13 +334,15 @@ u8 raceRun(void)
             raceDrawBike(rival, sx, ry, RF_RIDE + ((frame >> 2) & 1) * 2);
             raceDrawBike(hero, PLAYER_SX, py + (pspin ? ((frame & 4) ? 1 : -1) : 0), f);
         }
-        for (i = 0; i < NOBS; i++)
+        for (i = obfirst; i < NOBS; i++)
         {
             sx = PLAYER_SX + (s16)(ob_x[i] - pdist);
-            if (sx < -64 || sx > 256)
+            if (sx > 256)
+                break;
+            if (sx < -64)
                 continue;
-            t = course[i * 3 + 2];
-            oy = laneY(course[i * 3 + 1]);
+            t = ob_type[i];
+            oy = ob_y[i];
             if (t == O_CONE)
                 drawSmall(sx, oy - 16, ob_hit[i] ? 1 : 0, ATTR_SPRITE(PAL_OBJ), &race_small);
             else if (t == O_CAR)
@@ -345,7 +369,13 @@ u8 raceRun(void)
         hudFlush();
     }
     fadeOut();
-    if (won && hpmax[hero] < 5)
-        hpmax[hero]++;
+    if (won)
+    {
+        if (hpmax[hero] < 5)
+            hpmax[hero]++;
+        else if (lives < 99)
+            lives++;
+        addScore(200);
+    }
     return won;
 }

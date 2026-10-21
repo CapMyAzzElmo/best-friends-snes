@@ -182,10 +182,68 @@ def export_bg1(n, lv):
         f.write(words(t16 + [0] * (2048 - len(t16))))
     with open(os.path.join(BUILD, f"st{n}.b16"), "wb") as f:
         f.write(words(tile_attr + [0] * (1024 - len(tile_attr))))
-    return grid, tiles, tile_pal
+    coll = [[tile_attr[grid[y][x]] for x in range(W)] for y in range(H)]
+    return grid, tiles, tile_pal, coll
 
 
-def export_objects(n, lv):
+# breakable prop contents (match ITEM_* in src/game.h)
+ITEM_STAR, ITEM_HEART, ITEM_1UP, ITEM_SPREAD, ITEM_RAPID, ITEM_RANG, ITEM_BOMB = range(7)
+WEAPONS = [ITEM_SPREAD, ITEM_RAPID, ITEM_RANG, ITEM_BOMB]
+
+
+def surfaces(coll, tx):
+    """Rows (8px) a hero can stand on in column tx, top first, skipping hazard floors."""
+    H = len(coll)
+    out = []
+    for y in range(1, H):
+        if coll[y][tx] in (T_SOLID, T_PLATE) and coll[y - 1][tx] not in (T_SOLID, T_PLATE):
+            if y < H - 1 and all(coll[y - k][tx] != T_SOLID for k in range(1, 5) if y - k >= 0):
+                out.append(y)
+    return out
+
+
+def place_props(n, lv, coll):
+    """Breakable props every so often along the stage (on the highest safe
+    surface, so some sit up on platforms), and two checkpoint flags."""
+    arena = lv.w - ARENA_MT
+    props = []
+    pattern = ["W", ITEM_STAR, ITEM_HEART, ITEM_STAR, "W", ITEM_STAR, ITEM_1UP, ITEM_STAR, "W", ITEM_HEART,
+               ITEM_STAR, "W", ITEM_STAR, ITEM_HEART]
+    weapon = n - 1
+    mx = 9
+    k = 0
+    while mx < arena - 4:
+        found = None
+        for dx in range(0, 4):
+            tx = (mx + dx) * 2
+            # both 8px columns under the 16px prop must agree
+            a, b = surfaces(coll, tx), surfaces(coll, tx + 1)
+            common = [y for y in a if y in b and 8 <= y <= 24]
+            if common:
+                found = ((mx + dx) * 16, common[0] * 8)
+                break
+        if found:
+            item = pattern[k % len(pattern)]
+            if item == "W":
+                item = WEAPONS[weapon % 4]
+                weapon += 1
+            props.append((found[0], found[1], item))
+            k += 1
+        mx += 11 + (k * 7) % 5
+    cps = []
+    for frac in (0.36, 0.68):
+        mx = int(arena * frac)
+        for dx in range(0, 12):
+            tx = (mx + dx) * 2
+            a, b = surfaces(coll, tx), surfaces(coll, tx + 1)
+            ground = [y for y in a if y in b and y >= 20]
+            if ground:
+                cps.append(((mx + dx) * 16, ground[-1] * 8))
+                break
+    return props, cps
+
+
+def export_objects(n, lv, coll):
     start = [o for o in lv.objects if o[2] == OBJ_START][0]
     foes = sorted([o for o in lv.objects if o[2] in (FOE_A, FOE_B, FOE_C)], key=lambda o: o[0])
     hearts = [o for o in lv.objects if o[2] == OBJ_HEART]
@@ -206,6 +264,20 @@ def export_objects(n, lv):
         for o in hearts:
             f.write(f"    {o[0]}, {o[1]},\n")
         f.write("    0};\n")
+        props, cps = place_props(n, lv, coll)
+        assert len(props) <= 16 and len(cps) == 2, (len(props), cps)
+        f.write(f"#define ST{n}_NPROPS {len(props)}\n")
+        f.write("// breakable props: x, feet y, item\n")
+        f.write(f"const u16 st{n}_proptab[] = {{\n")
+        for p in props:
+            f.write(f"    {p[0]}, {p[1]}, {p[2]},\n")
+        f.write("    0};\n")
+        f.write("// checkpoint flags: x, feet y\n")
+        f.write(f"const u16 st{n}_cptab[] = {{\n")
+        for p in cps:
+            f.write(f"    {p[0]}, {p[1]},\n")
+        f.write("    0};\n")
+    return props, cps
 
 
 def export_bg2(n, c, pal):
@@ -268,12 +340,19 @@ def preview(grid, tiles, tile_pal, bg2, bg2pal, pals, x0=0, width=1024):
 def export_stage(n, lv, backdrop_canvas, backdrop_pal, palettes, backdrop_color):
     os.makedirs(BUILD, exist_ok=True)
     os.makedirs(ART, exist_ok=True)
-    grid, tiles, tile_pal = export_bg1(n, lv)
-    export_objects(n, lv)
+    grid, tiles, tile_pal, coll = export_bg1(n, lv)
+    props, cps = export_objects(n, lv, coll)
     export_bg2(n, backdrop_canvas, backdrop_pal)
     pals = export_palettes(n, *palettes, backdrop_color)
-    preview(grid, tiles, tile_pal, backdrop_canvas, backdrop_pal, pals, 0, lv.w * 16).save(
-        os.path.join(ART, f"st{n}_preview.png"))
+    img = preview(grid, tiles, tile_pal, backdrop_canvas, backdrop_pal, pals, 0, lv.w * 16)
+    # mark the props (yellow) and checkpoints (red) on the preview
+    from PIL import ImageDraw
+    d = ImageDraw.Draw(img)
+    for x, y, _ in props:
+        d.rectangle([x, y - 16, x + 15, y - 1], outline=(255, 230, 0))
+    for x, y in cps:
+        d.rectangle([x + 3, y - 16, x + 5, y - 1], fill=(255, 40, 40))
+    img.save(os.path.join(ART, f"st{n}_preview.png"))
 
 
 def pal_grid(p, w=512, h=224):

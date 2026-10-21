@@ -227,10 +227,12 @@ def build_level():
         lv.hazard(mx, n, river, A)
 
     # A: the festival lawn
+    lv.solid(6, 11, barricade(2), B)                 # steps up onto the tall props
     lv.solid(8, 9, food_truck(), B)
     lv.foe(FOE_A, 16, 13, 22)                        # security guard
     lv.solid(22, 11, barricade(3), B)
     lv.foe(FOE_C, 27, 24, 32, row=8)                 # pigeon
+    lv.solid(28, 10, bench_crates(), B)
     lv.solid(30, 9, porta_potty(), B)
     lv.solid(32, 9, porta_potty(), B)
     lv.heart(33, 7)
@@ -246,6 +248,7 @@ def build_level():
     lv.platform(60, 5, el_track(46), A)
     lv.solid(64, 11, barricade(3), B)
     lv.foe(FOE_C, 68, 64, 72, row=5)
+    lv.solid(68, 11, barricade(2), B)
     lv.solid(70, 9, food_truck(), B)
     lv.foe(FOE_B, 78, 75, 84)
     lv.heart(80, 4)
@@ -265,6 +268,7 @@ def build_level():
     lv.platform(131, 9, stage_deck(3), B)
     lv.deco(131, 10, scaffold(3, 2), B)
     lv.foe(FOE_A, 137, 134, 142)
+    lv.solid(140, 11, barricade(2), B)
     lv.solid(142, 9, porta_potty(), B)
     rivers(145, 3)
     lv.solid(149, 10, bench_crates(), B)

@@ -6,19 +6,21 @@
     title screen, the chapter cards with character select, the ending and
     the overall game flow:
 
-      FFA Convention, Jam Sessions, Road Ride (bonus), Bar Town Nights,
-      Chicago Fest, The Range (bonus), The Courthouse, Golden Years
+      six chapters, each followed by a bonus round (Road Ride and The Range
+      take turns), then the ending
 
 ---------------------------------------------------------------------------------*/
 #include "game.h"
 
-extern char SOUNDBANK__0, SOUNDBANK__1, SOUNDBANK__2;
+extern char SOUNDBANK__0, SOUNDBANK__1, SOUNDBANK__2, SOUNDBANK__3;
 extern char logo_pic, logo_pic_end, logo_pal, title_bg1_map, font_pic, font_pic_end, ui_pal;
 extern char jon_pic, jon_pal, jon_dim_pal, wes_pic, wes_pal, wes_dim_pal;
 extern char st1_bg1_pic, st1_bg1_pic_end, st1_bg_pal, st1_bg2_pic, st1_bg2_pic_end, st1_bg2_map;
 
 u8 hero, stage;
 u8 hpmax[2], dblshot[2];
+u8 lives, weapon;
+u16 score, next1up;
 u16 pad0, padpressed;
 u16 frame;
 u16 rng = 0x2F6B;
@@ -58,6 +60,7 @@ u16 rnd(void)
 // ---------------------------------------------------------------- HUD (BG3)
 u16 hud[32 * 32];
 u8 huddirty;
+u8 hudrows = 32;       // rows to upload on the next flush (the HUD bar is rows 0-3)
 
 void hudClear(void)
 {
@@ -65,11 +68,14 @@ void hudClear(void)
     for (k = 0; k < 32 * 32; k++)
         hud[k] = 0;
     huddirty = 1;
+    hudrows = 32;
 }
 
 void hudTextPal(u16 x, u16 y, char *s, u8 pal)
 {
     u16 p = y * 32 + x;
+    if (y >= hudrows)
+        hudrows = y + 1;
     while (*s)
     {
         hud[p] = ((*s) - 0x20) | 0x2000 | (pal << 10);
@@ -90,11 +96,15 @@ void hudClearRow(u16 y)
     for (k = 0; k < 32; k++)
         hud[y * 32 + k] = 0;
     huddirty = 1;
+    if (y >= hudrows)
+        hudrows = y + 1;
 }
 
 void hudNumber(u16 x, u16 y, u16 v, u8 digits)
 {
     u16 p = y * 32 + x + digits - 1;
+    if (y >= hudrows)
+        hudrows = y + 1;
     while (digits)
     {
         hud[p] = (('0' + (v % 10)) - 0x20) | 0x2000;
@@ -109,8 +119,42 @@ void hudFlush(void)
 {
     if (huddirty)
     {
-        dmaCopyVram((u8 *)hud, 0x7800, 32 * 32 * 2);
+        // only the rows that may have changed, to keep the vblank short
+        dmaCopyVram((u8 *)hud, 0x7800, hudrows << 6);
         huddirty = 0;
+        hudrows = 4;
+    }
+}
+
+u8 slen(char *s)
+{
+    u8 n = 0;
+    while (s[n])
+        n++;
+    return n;
+}
+
+// score: tens of points, shown with a trailing zero; an extra life every 20000
+void hudScore(void)
+{
+    hud[1 * 32 + 21] = 0x45 | 0x2000 | (2 << 10);
+    hudNumber(23, 1, score, 5);
+    hudText(28, 1, "0");
+    lastscore = score;
+}
+
+void addScore(u16 tens)
+{
+    if (score > 65000 - tens)
+        score = 65000;
+    else
+        score += tens;
+    if (score >= next1up)
+    {
+        next1up += 2000;
+        if (lives < 99)
+            lives++;
+        sfx(SFX_ONEUP);
     }
 }
 
@@ -181,29 +225,14 @@ void spriteSet(u8 n, s16 x, s16 y, u8 f, u8 attr, char *gfx)
     }
 }
 
-void drawBig(s16 x, s16 y, u8 f, u8 attr, char *gfx)
-{
-    if (nbig > BIG_LAST || x < -32 || x > 255 || y < -32 || y > 224)
-        return;
-    spriteSet(nbig, x, y, f, attr, gfx);
-    oamDynamic32Draw(nbig);
-    nbig++;
-}
-
-void drawSmall(s16 x, s16 y, u8 f, u8 attr, char *gfx)
-{
-    if (nsmall > SMALL_LAST || x < -16 || x > 255 || y < -16 || y > 224)
-        return;
-    spriteSet(nsmall, x, y, f, attr | OBJ_SIZES, gfx);
-    oamDynamic16Draw(nsmall);
-    nsmall++;
-}
+// drawBig and drawSmall are in fast.asm
 
 void endFrame(void)
 {
     oamInitDynamicSpriteEndFrame();
     spcProcess();
     WaitForVBlank();
+    hudFlush();    // text first: it is small, and late in the vblank it would be lost
     oamVramQueueUpdate();
 }
 
@@ -322,16 +351,17 @@ char *const card_text[24] = {
     "CHAPTER 4", "CHICAGO FEST", "A FESTIVAL WEEKEND", "IN THE WINDY CITY.",
     "CHAPTER 5", "THE COURTHOUSE", "THE NIGHT SHIFT, MOPPING", "A CASTLE OF A COURTHOUSE.",
     "CHAPTER 6", "GOLDEN YEARS", "OLD FRIENDS, STILL", "GETTING INTO TROUBLE."};
-char *const bonus_text[8] = {
-    "BONUS ROUND", "ROAD RIDE", "RACE THE B-KING AND THE RC51", "WIN TO EARN +1 HEART",
-    "BONUS ROUND", "THE RANGE", "HIT 25 TARGETS IN 40 SECONDS", "TO EARN THE DOUBLE SHOT"};
+// one bonus round after each chapter but the last
+char *const bonus_text[20] = {
+    "BONUS ROUND", "ROAD RIDE", "RACE THE B-KING AND THE RC51", "TO THE DINER. WIN: +1 HEART",
+    "BONUS ROUND", "THE RANGE", "HIT 25 TARGETS IN 40 SECONDS", "FOR AN EXTRA LIFE",
+    "BONUS ROUND", "MIDNIGHT RUN", "RACE HOME THROUGH THE NIGHT", "WIN: +1 HEART",
+    "BONUS ROUND", "DUSK AT THE RANGE", "FASTER TARGETS, LOW LIGHT", "HIT 25 FOR AN EXTRA LIFE",
+    "BONUS ROUND", "SUNSET RIDE", "ONE LAST RACE DOWN THE COAST", "WIN: +1 HEART"};
 
 u8 centre(char *s)
 {
-    u8 n = 0;
-    while (s[n])
-        n++;
-    return (32 - n) >> 1;
+    return (32 - slen(s)) >> 1;
 }
 
 void cardPerks(void)
@@ -339,6 +369,13 @@ void cardPerks(void)
     u8 k;
     hudClearRow(22);
     hudClearRow(23);
+    hudClearRow(2);
+    hud[2 * 32 + 3] = 0x44 | 0x2000 | (2 << 10);
+    hudText(4, 2, "X");
+    hudNumber(5, 2, lives, 2);
+    hudText(18, 2, "SCORE");
+    hudNumber(24, 2, score, 5);
+    hudText(29, 2, "0");
     for (k = 0; k < 2; k++)
     {
         u8 x = k ? 19 : 5;
@@ -445,6 +482,9 @@ void ending(void)
             line++;
             if (line == 10)
             {
+                hudText(7, 20, "FINAL SCORE");
+                hudNumber(19, 20, score, 5);
+                hudText(24, 20, "0");
                 hudTextPal(12, 24, "THE END", 2);
                 hudText(7, 26, "THANKS FOR PLAYING");
             }
@@ -460,25 +500,80 @@ void ending(void)
 }
 
 // ---------------------------------------------------------------- game flow
-void playStage(void)
+// out of lives: continue from the start of the chapter, or give up
+u8 gameOver(void)
 {
-    u8 r, atarena = 0;
+    u8 sel = 0, anim = 0;
+    menuScreen(0);
+    hudTextPal(11, 8, "GAME OVER", 2);
+    hudText(9, 12, "FINAL SCORE");
+    hudNumber(10, 14, score, 5);
+    hudText(15, 14, "0");
+    spcStop();
+    setScreenOn();
+    fadeIn();
+    while (1)
+    {
+        anim++;
+        hudClearRow(18);
+        hudTextPal(8, 18, "CONTINUE", sel == 0 ? 2 : 0);
+        hudTextPal(19, 18, "QUIT", sel == 1 ? 2 : 0);
+        hudText(sel ? 17 : 6, 18, ">");
+        padpressed = padsDown(0);
+        if (padpressed & (KEY_LEFT | KEY_RIGHT | KEY_SELECT))
+        {
+            sel ^= 1;
+            sfx(SFX_SELECT);
+        }
+        if ((padpressed & (KEY_START | KEY_A | KEY_B)) && anim > 30)
+            break;
+        drawFriends(hero, 0, 176, 0);
+        endFrame();
+        hudFlush();
+    }
+    fadeOut();
+    return sel == 0;
+}
+
+// returns 0 when the player quits to the title
+u8 playStage(void)
+{
+    u8 r;
     chapterCard(&card_text[stage * 4], 1);
     while (1)
     {
-        stageStart(atarena);
+        stageStart(1);
         r = stageLoop();
         fadeOut();
-        if (r == 1)
-            break;
-        atarena = (r == 2);
+        if (r == STAGE_CLEAR)
+            return 1;
+        if (r == STAGE_QUIT)
+            return 0;
+        // game over
+        if (!gameOver())
+            return 0;
+        lives = 3;
+        score = 0;
+        next1up = 2000;
+        chapterCard(&card_text[stage * 4], 1);
     }
+}
+
+void playBonus(void)
+{
+    u8 b = stage;    // 0 race, 1 range, 2 race at night, 3 range at dusk, 4 race at sunset
+    chapterCard(&bonus_text[b * 4], 0);
+    if (b & 1)
+        rangeRun(b >> 1);
+    else
+        raceRun(b >> 1);
 }
 
 int main(void)
 {
     spcBoot();
     // the soundbank spans three banks; naming each keeps the linker from dropping them
+    spcSetBank(&SOUNDBANK__3);
     spcSetBank(&SOUNDBANK__2);
     spcSetBank(&SOUNDBANK__1);
     spcSetBank(&SOUNDBANK__0);
@@ -488,22 +583,20 @@ int main(void)
         titleScreen();
         hpmax[0] = hpmax[1] = 3;
         dblshot[0] = dblshot[1] = 0;
+        lives = 3;
+        weapon = W_LOB;
+        score = 0;
+        next1up = 2000;
         hero = HERO_JON;
         for (stage = startstage; stage < NSTAGES; stage++)
         {
-            playStage();
-            if (stage == 1)
-            {
-                chapterCard(&bonus_text[0], 0);
-                raceRun();
-            }
-            if (stage == 3)
-            {
-                chapterCard(&bonus_text[4], 0);
-                rangeRun();
-            }
+            if (!playStage())
+                break;
+            if (stage < NSTAGES - 1)
+                playBonus();
         }
-        ending();
+        if (stage == NSTAGES)
+            ending();
     }
     return 0;
 }

@@ -389,6 +389,17 @@ ui_pal:
 
 .ends
 
+; Pickups, props and weapon shots -------------------------------------
+.section ".rodata_items" superfree
+
+items_pic:
+.incbin "build/items.pic"
+
+items_pal:
+.incbin "build/items.pal"
+
+.ends
+
 ; Heroes --------------------------------------------------------------
 .section ".rodata_jon" superfree
 
@@ -455,6 +466,12 @@ race_bg2_map:
 race_bg_pal:
 .incbin "build/race_bg.pal"
 
+race_bg_night_pal:
+.incbin "build/race_bg_night.pal"
+
+race_bg_dusk_pal:
+.incbin "build/race_bg_dusk.pal"
+
 .ends
 
 ; The Range -----------------------------------------------------------
@@ -469,6 +486,9 @@ range_bg1_map:
 
 range_bg_pal:
 .incbin "build/range_bg.pal"
+
+range_bg_dusk_pal:
+.incbin "build/range_bg_dusk.pal"
 
 range_big:
 .incbin "build/range_big.pic"
