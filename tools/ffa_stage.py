@@ -274,8 +274,34 @@ def trophy():
 
 
 # --- level assembly -------------------------------------------------------
-LEVEL_W_MT = 150
+LEVEL_W_MT = 160
 LEVEL_H_MT = 14
+
+# object types (match src/main.c)
+OBJ_START, OBJ_GOAT, OBJ_GOAL, OBJ_PIG, OBJ_CHICKEN, OBJ_HEART = range(6)
+
+
+def trough(part):
+    """Water trough sunk into the floor: part 0 left end, 1 middle, 2 right end."""
+    c = Canvas(16, 32)
+    for y in range(32):
+        for x in range(16):
+            c.set(x, y, 12 if y > 20 else 0)
+    for y in range(4, 22):
+        for x in range(16):
+            if y < 7:
+                c.set(x, y, 13 if (x + y) % 5 == 0 else 14)   # water surface glints
+            else:
+                c.set(x, y, 15 if (y // 3 + x // 4) % 3 else 14)
+    for x in range(16):
+        c.set(x, 3, 1); c.set(x, 21, 1)
+    if part == 0:
+        for y in range(0, 22):
+            c.set(0, y, 1); c.set(1, y, 14); c.set(2, y, 15)
+    if part == 2:
+        for y in range(0, 22):
+            c.set(15, y, 1); c.set(14, y, 15); c.set(13, y, 15)
+    return c
 
 
 class Level:
@@ -286,8 +312,8 @@ class Level:
     def put(self, mx, my, mt):
         self.cells[(mx, my)] = mt
 
-    def put_big(self, mx, my, canvas, pal, solid_rows=None, plate_top=False):
-        """Split a larger canvas into metatiles. solid_rows: set of 8px rows that are solid."""
+    def put_big(self, mx, my, canvas, pal, solid_rows=None, plate_top=False, attr_rows=None):
+        """Split a larger canvas into metatiles. attr_rows: per 8px row attribute list."""
         for ty in range(canvas.h // 16):
             for tx in range(canvas.w // 16):
                 sub = Canvas(16, 16)
@@ -298,7 +324,9 @@ class Level:
                 for r in range(2):
                     for _ in range(2):
                         row8 = ty * 2 + r
-                        if solid_rows == "all":
+                        if attr_rows is not None:
+                            attrs.append(attr_rows[row8])
+                        elif solid_rows == "all":
                             attrs.append(T_SOLID)
                         elif plate_top and row8 == 0:
                             attrs.append(T_PLATE)
@@ -332,52 +360,70 @@ def build_level():
     def planks(mx, my, n):
         for i in range(n):
             lv.put(mx + i, my, (pl, PAL_FARM, [T_PLATE, T_PLATE, T_EMPTY, T_EMPTY]))
-    def goat(mx, lo, hi):
-        lv.objects.append((mx * 16, 11 * 16 - 16, 1, lo * 16, hi * 16))
+    def troughs(mx, n):
+        for i in range(n):
+            part = 0 if i == 0 else (2 if i == n - 1 else 1)
+            lv.put_big(mx + i, 12, trough(part), PAL_FARM,
+                       attr_rows=[T_EMPTY, T_EMPTY, T_EMPTY, T_SOLID])
+    def enemy(kind, mx, lo, hi, row=12):
+        lv.objects.append((mx * 16, row * 16, kind, lo * 16, hi * 16))
+    def heart(mx, row):
+        lv.objects.append((mx * 16, row * 16, OBJ_HEART, 0, 0))
 
-    # opening: pens and a welcome table
-    fences(2, 6)
-    tables(11, 10, 3)
-    bales(17, 11, 2)
-    bales(18, 10, 1)
-    goat(26, 22, 32)
-    crates(33, 10)
-    crates(35, 10)
-    crates(35, 8)
-    planks(38, 7, 3)
-    bales(43, 11, 3)
-    bales(45, 10, 2)
-    bales(46, 9, 1)
-    goat(52, 50, 60)
-    fences(54, 5)
-    tables(61, 10, 4)
-    planks(66, 8, 2)
-    planks(70, 6, 3)
-    planks(75, 8, 2)
-    goat(72, 68, 80)
-    bales(80, 11, 2)
-    bales(84, 11, 2)
-    bales(82, 10, 2)
-    bales(83, 9, 1)
-    goat(90, 87, 94)
-    crates(95, 10)
-    crates(97, 10)
-    crates(97, 8)
-    crates(99, 10)
-    crates(101, 10)
-    planks(103, 8, 2)
-    tables(106, 10, 3)
-    goat(112, 109, 120)
-    fences(114, 4)
-    bales(120, 11, 2)
-    goat(126, 124, 132)
-    # finale: the convention stage with the champion trophy
-    lv.put_big(134, 9, stage_deck(16), PAL_FARM, plate_top=True)
-    lv.put_big(134, 10, stage_skirt(16, 2), PAL_FFA)
-    lv.put_big(142, 7, trophy(), PAL_FFA)
-    bales(131, 11, 1)
-    lv.objects.insert(0, (32, 11 * 16 - 48, 0, 0, 0))     # player start
-    lv.objects.append((142 * 16, 7 * 16, 2, 0, 0))         # goal
+    # A: the welcome pens
+    fences(2, 5)
+    tables(9, 10, 3)
+    bales(14, 11, 2)
+    bales(15, 10, 1)
+    enemy(OBJ_GOAT, 21, 19, 27)
+    # B: the poultry barn, climb the crates and planks
+    crates(27, 10)
+    planks(30, 8, 3)
+    planks(34, 6, 3)
+    heart(35, 5)
+    enemy(OBJ_CHICKEN, 31, 30, 33, row=8)
+    enemy(OBJ_CHICKEN, 37, 33, 41)
+    crates(40, 10)
+    crates(42, 10)
+    crates(42, 8)
+    enemy(OBJ_CHICKEN, 45, 44, 47)
+    # C: water troughs
+    troughs(48, 3)
+    bales(51, 11, 1)
+    troughs(53, 3)
+    bales(56, 11, 1)
+    troughs(58, 4)
+    enemy(OBJ_GOAT, 66, 63, 70)
+    # D: the catwalk over the pig pen
+    bales(70, 11, 2)
+    bales(71, 10, 1)
+    planks(72, 8, 6)
+    planks(80, 8, 5)
+    planks(87, 8, 6)
+    fences(76, 5)
+    enemy(OBJ_PIG, 82, 74, 94)
+    enemy(OBJ_CHICKEN, 89, 87, 92, row=8)
+    # E: the bleacher climb
+    planks(97, 10, 2)
+    planks(100, 8, 2)
+    planks(103, 6, 3)
+    heart(104, 5)
+    planks(107, 8, 2)
+    planks(110, 10, 2)
+    enemy(OBJ_GOAT, 103, 98, 113)
+    enemy(OBJ_CHICKEN, 116, 113, 120)
+    # F: the judging tables
+    tables(121, 10, 4)
+    enemy(OBJ_CHICKEN, 127, 125, 131)
+    bales(134, 11, 2)
+    enemy(OBJ_PIG, 131, 126, 140)
+    # G: the convention stage and the champion trophy
+    bales(141, 11, 1)
+    lv.put_big(144, 9, stage_deck(16), PAL_FARM, plate_top=True)
+    lv.put_big(144, 10, stage_skirt(16, 2), PAL_FFA)
+    lv.put_big(152, 7, trophy(), PAL_FFA)
+    lv.objects.insert(0, (32, 11 * 16 - 32, OBJ_START, 0, 0))
+    lv.objects.append((152 * 16, 7 * 16, OBJ_GOAL, 0, 0))
     return lv
 
 
@@ -427,18 +473,24 @@ def export_bg1(lv):
         f.write(words(t16 + [0] * (2048 - len(t16))))
     with open(os.path.join(BUILD, "stage1.b16"), "wb") as f:
         f.write(words(tile_attr + [0] * (1024 - len(tile_attr))))
-    goats = [o for o in lv.objects if o[2] == 1]
-    start = [o for o in lv.objects if o[2] == 0][0]
-    goal = [o for o in lv.objects if o[2] == 2][0]
+    start = [o for o in lv.objects if o[2] == OBJ_START][0]
+    goal = [o for o in lv.objects if o[2] == OBJ_GOAL][0]
+    foes = sorted([o for o in lv.objects if o[2] in (OBJ_GOAT, OBJ_PIG, OBJ_CHICKEN)], key=lambda o: o[0])
+    hearts = [o for o in lv.objects if o[2] == OBJ_HEART]
     with open(os.path.join(BUILD, "stage1_hero.o16"), "wb") as f:
         f.write(words([start[0], start[1], 0, 0, 0, 0xFFFF]))
     with open(os.path.join(BUILD, "stage1_objects.h"), "w") as f:
         f.write("// generated by tools/ffa_stage.py\n")
         f.write(f"#define STAGE1_START_X {start[0]}\n#define STAGE1_START_Y {start[1]}\n")
-        f.write(f"#define STAGE1_GOAL_X {goal[0]}\n#define STAGE1_NGOATS {len(goats)}\n")
-        f.write("const u16 stage1_goats[] = {\n")
-        for g in goats:
-            f.write(f"    {g[0]}, {g[3]}, {g[4]},\n")
+        f.write(f"#define STAGE1_GOAL_X {goal[0]}\n#define STAGE1_NFOES {len(foes)}\n")
+        f.write(f"#define STAGE1_NHEARTS {len(hearts)}\n")
+        f.write("// type, x, feet y, min x, max x\n")
+        f.write("const u16 stage1_foes[] = {\n")
+        for o in foes:
+            f.write(f"    {o[2]}, {o[0]}, {o[1]}, {o[3]}, {o[4]},\n")
+        f.write("};\nconst u16 stage1_hearts[] = {\n")
+        for o in hearts:
+            f.write(f"    {o[0]}, {o[1]},\n")
         f.write("};\n")
     return grid, tiles, tile_pal
 

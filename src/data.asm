@@ -60,10 +60,8 @@ ui_pal:
 ; Sprites -------------------------------------------------------------------------
 .section ".rodata_jon" superfree
 
-jon_top:
-.incbin "build/jon_top.pic"
-jon_bot:
-.incbin "build/jon_bot.pic"
+jon_pic:
+.incbin "build/jon.pic"
 jon_pal:
 .incbin "build/jon.pal"
 jon_dim_pal:
@@ -73,10 +71,8 @@ jon_dim_pal:
 
 .section ".rodata_wes" superfree
 
-wes_top:
-.incbin "build/wes_top.pic"
-wes_bot:
-.incbin "build/wes_bot.pic"
+wes_pic:
+.incbin "build/wes.pic"
 wes_pal:
 .incbin "build/wes.pal"
 wes_dim_pal:
@@ -86,11 +82,13 @@ wes_dim_pal:
 
 .section ".rodata_critters" superfree
 
-goat_pic:
-.incbin "build/goat.pic"
+beasts_pic:
+.incbin "build/beasts.pic"
 small_pic:
 .incbin "build/small.pic"
 critters_pal:
 .incbin "build/critters.pal"
+pig_pal:
+.incbin "build/pig.pal"
 
 .ends

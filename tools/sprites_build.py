@@ -1,8 +1,8 @@
 """Converts the generated sprite sheets into the VRAM layout used by
 PVSnesLib's dynamic sprite engine (frames on a 128px wide grid).
 
-Heroes are 32x64 frames, drawn on screen as two 32x32 sprites, so each hero
-sheet is split into a top and a bottom half sheet.
+Heroes and beasts are 32x32 frames (one large sprite each); grapes, sparks,
+hearts and chickens are 16x16 frames.
 """
 import os
 import sys
@@ -52,15 +52,13 @@ def main():
     os.makedirs(BUILD, exist_ok=True)
     for hero in ("jon", "wes"):
         rows, w, h, colors = load(f"{hero}.png")
-        frames = frames_of(rows, 32, 64)
-        top = [f[:32] for f in frames]
-        bot = [f[32:] for f in frames]
-        open(os.path.join(BUILD, f"{hero}_top.pic"), "wb").write(grid_pic(top, 32))
-        open(os.path.join(BUILD, f"{hero}_bot.pic"), "wb").write(grid_pic(bot, 32))
+        open(os.path.join(BUILD, f"{hero}.pic"), "wb").write(grid_pic(frames_of(rows, 32, 32), 32))
         open(os.path.join(BUILD, f"{hero}.pal"), "wb").write(palette_bytes(colors))
-    rows, w, h, colors = load("goat.png")
-    open(os.path.join(BUILD, "goat.pic"), "wb").write(grid_pic(frames_of(rows, 32, 32), 32))
+    rows, w, h, colors = load("beasts.png")
+    open(os.path.join(BUILD, "beasts.pic"), "wb").write(grid_pic(frames_of(rows, 32, 32), 32))
     open(os.path.join(BUILD, "critters.pal"), "wb").write(palette_bytes(colors))
+    rows, w, h, colors = load("beasts_pigpal.png")
+    open(os.path.join(BUILD, "pig.pal"), "wb").write(palette_bytes(colors))
     rows, w, h, colors = load("small.png")
     open(os.path.join(BUILD, "small.pic"), "wb").write(grid_pic(frames_of(rows, 16, 16), 16))
 
