@@ -22,8 +22,8 @@ def main():
     dims = dict(line.split()[1:] for line in open(os.path.join(BUILD, "logo_dims.h")))
     lw, lh = int(dims["LOGO_W"]), int(dims["LOGO_H"])
     logo = read_words("logo.map")
-    m16 = read_words("stage1.m16")
-    t16 = read_words("stage1.t16")
+    m16 = read_words("st1.m16")
+    t16 = read_words("st1.t16")
     sw = m16[0] // 8
     grid = m16[3:]
     tmap = [0] * (32 * 32)

@@ -54,14 +54,6 @@ def main():
         rows, w, h, colors = load(f"{hero}.png")
         open(os.path.join(BUILD, f"{hero}.pic"), "wb").write(grid_pic(frames_of(rows, 32, 32), 32))
         open(os.path.join(BUILD, f"{hero}.pal"), "wb").write(palette_bytes(colors))
-    rows, w, h, colors = load("beasts.png")
-    open(os.path.join(BUILD, "beasts.pic"), "wb").write(grid_pic(frames_of(rows, 32, 32), 32))
-    open(os.path.join(BUILD, "critters.pal"), "wb").write(palette_bytes(colors))
-    rows, w, h, colors = load("beasts_pigpal.png")
-    open(os.path.join(BUILD, "pig.pal"), "wb").write(palette_bytes(colors))
-    rows, w, h, colors = load("small.png")
-    open(os.path.join(BUILD, "small.pic"), "wb").write(grid_pic(frames_of(rows, 16, 16), 16))
-
 
 if __name__ == "__main__":
     main()

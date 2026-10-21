@@ -1,29 +1,15 @@
-"""Builds Stage 1, the FFA Convention hall.
-
-BG1 (playfield) is assembled from 16x16 metatiles placed on a grid, so the
-level reuses a small set of 8x8 tiles. BG2 is a 512px wide repeating hall
-backdrop (rafters, windows, banners, bleachers) that scrolls at half speed.
-
-Outputs (in build/):
-  stage1_bg1.pic/.pal   BG1 tiles (4bpp) and BG palettes 1-2
-  stage1.m16/.t16/.b16  map engine data (map, tile palette/priority, collision)
-  stage1.o16            object list (player start, goats, goal)
-  stage1_bg2.pic/.pal/.map  BG2 tiles, palettes 5-6 and 64x32 tilemap
-and art/bg/stage1_preview.png for review.
+"""Stage 1: the FFA Convention hall, where Jon and Wes met flinging grapes
+off spoons. Hay bales, crates, pens, water troughs, a catwalk over the pig
+pen, bleachers and the judging tables, then the show ring where the Grand
+Champion Bull waits.
 """
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(__file__))
-from PIL import Image
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from pixel import Canvas, capsule, ellipse, shade, outlined
-from snesgfx import tile_4bpp, palette_bytes, words
-
-ROOT = os.path.join(os.path.dirname(__file__), "..")
-BUILD = os.path.join(ROOT, "build")
-ART = os.path.join(ROOT, "art", "bg")
-
-T_EMPTY, T_SOLID, T_PLATE = 0x0000, 0xFF00, 0x0008
+from stagekit import (Level, T_EMPTY, T_SOLID, T_PLATE, PAL_A, PAL_B, PAL_C, PAL_D,
+                      FOE_A, FOE_B, FOE_C, ARENA_MT, noise, export_stage)
 
 # --- palettes -------------------------------------------------------------
 P_FARM = [(0, 0, 0), (40, 26, 24),
@@ -53,14 +39,7 @@ P_CROWD = [(0, 0, 0), (14, 14, 26),
            (30, 32, 50), (46, 50, 72), (64, 68, 94),                          # 9-11 crowd
            (170, 54, 46), (112, 34, 34),                                      # 12-13 red
            (58, 126, 68), (34, 86, 46)]                                       # 14-15 green
-PAL_FARM, PAL_FFA, PAL_HALL, PAL_CROWD = 1, 2, 5, 6
-
-
-def noise(x, y, seed=0):
-    """Deterministic hash noise in [0, 1)."""
-    n = (x * 374761393 + y * 668265263 + seed * 2246822519) & 0xFFFFFFFF
-    n = ((n ^ (n >> 13)) * 1274126177) & 0xFFFFFFFF
-    return ((n ^ (n >> 16)) & 0xFFFF) / 65536.0
+PAL_FARM, PAL_FFA, PAL_HALL, PAL_CROWD = PAL_A, PAL_B, PAL_C, PAL_D
 
 
 # --- metatiles (16x16) ----------------------------------------------------
@@ -274,11 +253,7 @@ def trophy():
 
 
 # --- level assembly -------------------------------------------------------
-LEVEL_W_MT = 160
-LEVEL_H_MT = 14
-
-# object types (match src/main.c)
-OBJ_START, OBJ_GOAT, OBJ_GOAL, OBJ_PIG, OBJ_CHICKEN, OBJ_HEART = range(6)
+LEVEL_W_MT = 176
 
 
 def trough(part):
@@ -304,43 +279,9 @@ def trough(part):
     return c
 
 
-class Level:
-    def __init__(self):
-        self.cells = {}           # (mx, my) -> (canvas16, palette, attrs)
-        self.objects = []         # (x, y, type, minx, maxx)
-
-    def put(self, mx, my, mt):
-        self.cells[(mx, my)] = mt
-
-    def put_big(self, mx, my, canvas, pal, solid_rows=None, plate_top=False, attr_rows=None):
-        """Split a larger canvas into metatiles. attr_rows: per 8px row attribute list."""
-        for ty in range(canvas.h // 16):
-            for tx in range(canvas.w // 16):
-                sub = Canvas(16, 16)
-                for y in range(16):
-                    for x in range(16):
-                        sub.px[y][x] = canvas.px[ty * 16 + y][tx * 16 + x]
-                attrs = []
-                for r in range(2):
-                    for _ in range(2):
-                        row8 = ty * 2 + r
-                        if attr_rows is not None:
-                            attrs.append(attr_rows[row8])
-                        elif solid_rows == "all":
-                            attrs.append(T_SOLID)
-                        elif plate_top and row8 == 0:
-                            attrs.append(T_PLATE)
-                        else:
-                            attrs.append(T_EMPTY)
-                self.put(mx + tx, my + ty, (sub, pal, attrs))
-
-
 def build_level():
-    lv = Level()
-    gt, gf = mt_ground_top(), mt_ground()
-    for mx in range(LEVEL_W_MT):
-        lv.put(mx, 12, gt)
-        lv.put(mx, 13, gf)
+    lv = Level(LEVEL_W_MT)
+    lv.floor(mt_ground_top(), mt_ground())
 
     bale, box = hay_bale(), crate()
     def bales(mx, my, n=1):
@@ -361,14 +302,9 @@ def build_level():
         for i in range(n):
             lv.put(mx + i, my, (pl, PAL_FARM, [T_PLATE, T_PLATE, T_EMPTY, T_EMPTY]))
     def troughs(mx, n):
-        for i in range(n):
-            part = 0 if i == 0 else (2 if i == n - 1 else 1)
-            lv.put_big(mx + i, 12, trough(part), PAL_FARM,
-                       attr_rows=[T_EMPTY, T_EMPTY, T_EMPTY, T_SOLID])
-    def enemy(kind, mx, lo, hi, row=12):
-        lv.objects.append((mx * 16, row * 16, kind, lo * 16, hi * 16))
-    def heart(mx, row):
-        lv.objects.append((mx * 16, row * 16, OBJ_HEART, 0, 0))
+        lv.hazard(mx, n, trough, PAL_FARM)
+    enemy, heart = lv.foe, lv.heart
+    OBJ_GOAT, OBJ_PIG, OBJ_CHICKEN = FOE_A, FOE_B, FOE_C
 
     # A: the welcome pens
     fences(2, 5)
@@ -417,82 +353,24 @@ def build_level():
     enemy(OBJ_CHICKEN, 127, 125, 131)
     bales(134, 11, 2)
     enemy(OBJ_PIG, 131, 126, 140)
-    # G: the convention stage and the champion trophy
+    # G: the prize stage, now a gauntlet of crates over the sawdust pit
     bales(141, 11, 1)
-    lv.put_big(144, 9, stage_deck(16), PAL_FARM, plate_top=True)
-    lv.put_big(144, 10, stage_skirt(16, 2), PAL_FFA)
-    lv.put_big(152, 7, trophy(), PAL_FFA)
-    lv.objects.insert(0, (32, 11 * 16 - 32, OBJ_START, 0, 0))
-    lv.objects.append((152 * 16, 7 * 16, OBJ_GOAL, 0, 0))
+    lv.put_big(144, 9, stage_deck(6), PAL_FARM, plate_top=True)
+    lv.put_big(144, 10, stage_skirt(6, 2), PAL_FFA)
+    troughs(151, 2)
+    crates(153, 10)
+    troughs(155, 2)
+    tables(157, 10, 2, bowl=False)
+    enemy(OBJ_GOAT, 145, 144, 149, row=9)
+    heart(158, 8)
+    # H: the show ring (boss arena)
+    a0 = LEVEL_W_MT - ARENA_MT
+    fences(a0, 2)
+    fences(LEVEL_W_MT - 2, 2)
+    planks(a0 + 3, 9, 3)
+    planks(a0 + 10, 9, 3)
+    lv.start()
     return lv
-
-
-def export_bg1(lv):
-    tiles = [tuple(tuple(0 for _ in range(8)) for _ in range(8))]  # tile 0 = blank
-    tile_pal = [PAL_FARM]
-    tile_attr = [T_EMPTY]
-    index = {(tiles[0], PAL_FARM, T_EMPTY): 0}
-    W, H = LEVEL_W_MT * 2, LEVEL_H_MT * 2
-    grid = [[0] * W for _ in range(H)]
-    for (mx, my), (cv, pal, attrs) in lv.cells.items():
-        for q in range(4):
-            qx, qy = q % 2, q // 2
-            px = tuple(tuple(cv.px[qy * 8 + y][qx * 8 + x] for x in range(8)) for y in range(8))
-            attr = attrs[q]
-            if not any(any(r) for r in px) and attr == T_EMPTY:
-                key = (tiles[0], PAL_FARM, T_EMPTY)
-            else:
-                key = (px, pal, attr)
-            if key not in index:
-                index[key] = len(tiles)
-                tiles.append(px)
-                tile_pal.append(pal)
-                tile_attr.append(attr)
-            grid[my * 2 + qy][mx * 2 + qx] = index[key]
-    # tiles are deduplicated with their attribute, so the same picture may
-    # appear twice (solid vs. empty); VRAM data is shared by remapping.
-    vram = {}
-    vram_tiles = []
-    t16 = []
-    for i, px in enumerate(tiles):
-        if px not in vram:
-            vram[px] = len(vram_tiles)
-            vram_tiles.append(px)
-        t16.append(vram[px] | (tile_pal[i] << 10))
-    print(f"BG1: {len(tiles)} map tiles, {len(vram_tiles)} unique VRAM tiles")
-    assert len(vram_tiles) <= 512, "BG1 tile budget exceeded"
-    assert len(tiles) <= 1024
-
-    with open(os.path.join(BUILD, "stage1_bg1.pic"), "wb") as f:
-        for px in vram_tiles:
-            f.write(tile_4bpp(px))
-    with open(os.path.join(BUILD, "stage1.m16"), "wb") as f:
-        f.write(words([W * 8, H * 8, W * H * 2]))
-        f.write(words([grid[y][x] for y in range(H) for x in range(W)]))
-    with open(os.path.join(BUILD, "stage1.t16"), "wb") as f:
-        f.write(words(t16 + [0] * (2048 - len(t16))))
-    with open(os.path.join(BUILD, "stage1.b16"), "wb") as f:
-        f.write(words(tile_attr + [0] * (1024 - len(tile_attr))))
-    start = [o for o in lv.objects if o[2] == OBJ_START][0]
-    goal = [o for o in lv.objects if o[2] == OBJ_GOAL][0]
-    foes = sorted([o for o in lv.objects if o[2] in (OBJ_GOAT, OBJ_PIG, OBJ_CHICKEN)], key=lambda o: o[0])
-    hearts = [o for o in lv.objects if o[2] == OBJ_HEART]
-    with open(os.path.join(BUILD, "stage1_hero.o16"), "wb") as f:
-        f.write(words([start[0], start[1], 0, 0, 0, 0xFFFF]))
-    with open(os.path.join(BUILD, "stage1_objects.h"), "w") as f:
-        f.write("// generated by tools/ffa_stage.py\n")
-        f.write(f"#define STAGE1_START_X {start[0]}\n#define STAGE1_START_Y {start[1]}\n")
-        f.write(f"#define STAGE1_GOAL_X {goal[0]}\n#define STAGE1_NFOES {len(foes)}\n")
-        f.write(f"#define STAGE1_NHEARTS {len(hearts)}\n")
-        f.write("// type, x, feet y, min x, max x\n")
-        f.write("const u16 stage1_foes[] = {\n")
-        for o in foes:
-            f.write(f"    {o[2]}, {o[0]}, {o[1]}, {o[3]}, {o[4]},\n")
-        f.write("};\nconst u16 stage1_hearts[] = {\n")
-        for o in hearts:
-            f.write(f"    {o[0]}, {o[1]},\n")
-        f.write("};\n")
-    return grid, tiles, tile_pal
 
 
 # --- BG2: the hall backdrop ---------------------------------------------------
@@ -605,75 +483,10 @@ def hall_backdrop():
     return c, pal
 
 
-def export_bg2():
-    c, pal = hall_backdrop()
-    tiles = {}
-    tile_list = []
-    tmap = [[0] * 64 for _ in range(32)]
-    for ty in range(28):
-        for tx in range(64):
-            px = tuple(tuple(c.px[ty * 8 + y][tx * 8 + x] for x in range(8)) for y in range(8))
-            flip = None
-            key = px
-            if key not in tiles:
-                tiles[key] = len(tile_list)
-                tile_list.append(px)
-            tmap[ty][tx] = tiles[key] | (pal[ty][tx] << 10)
-    print(f"BG2: {len(tile_list)} unique tiles")
-    assert len(tile_list) <= 512, "BG2 tile budget exceeded"
-    with open(os.path.join(BUILD, "stage1_bg2.pic"), "wb") as f:
-        for px in tile_list:
-            f.write(tile_4bpp(px))
-    # SC_64x32 layout: left 32x32 screen then right 32x32 screen
-    data = []
-    for screen in range(2):
-        for y in range(32):
-            for x in range(32):
-                data.append(tmap[y][screen * 32 + x])
-    with open(os.path.join(BUILD, "stage1_bg2.map"), "wb") as f:
-        f.write(words(data))
-    return c, pal
-
-
-def export_palettes():
-    pals = [[(0, 0, 0)] * 16 for _ in range(8)]
-    pals[0][0] = (14, 14, 26)              # backdrop colour
-    pals[PAL_FARM] = P_FARM
-    pals[PAL_FFA] = P_FFA
-    pals[PAL_HALL] = P_HALL
-    pals[PAL_CROWD] = P_CROWD
-    with open(os.path.join(BUILD, "stage1_bg.pal"), "wb") as f:
-        for p in pals:
-            f.write(palette_bytes(p))
-    return pals
-
-
-def preview(lv, grid, tiles, tile_pal, bg2, bg2pal, pals, x0=0, width=1024):
-    snap = lambda rgb: tuple((v >> 3) << 3 for v in rgb)
-    img = Image.new("RGB", (width, 224))
-    pix = img.load()
-    for y in range(224):
-        for x in range(width):
-            bx = (x0 // 2 + x) % 512
-            v = bg2.px[y][bx]
-            p = bg2pal[y // 8][bx // 8]
-            pix[x, y] = snap(pals[p][v])
-            lx = x0 + x
-            t = grid[y // 8][lx // 8]
-            tv = tiles[t][y % 8][lx % 8]
-            if tv:
-                pix[x, y] = snap(pals[tile_pal[t]][tv])
-    return img
-
-
 def main():
-    os.makedirs(BUILD, exist_ok=True)
-    os.makedirs(ART, exist_ok=True)
     lv = build_level()
-    grid, tiles, tile_pal = export_bg1(lv)
-    bg2, bg2pal = export_bg2()
-    pals = export_palettes()
-    preview(lv, grid, tiles, tile_pal, bg2, bg2pal, pals, 0, 2400).save(os.path.join(ART, "stage1_preview.png"))
+    bg2, bg2pal = hall_backdrop()
+    export_stage(1, lv, bg2, bg2pal, (P_FARM, P_FFA, P_HALL, P_CROWD), (14, 14, 26))
 
 
 if __name__ == "__main__":

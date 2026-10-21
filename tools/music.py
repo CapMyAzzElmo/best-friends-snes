@@ -1,13 +1,24 @@
 """Composes COMRADES' music and sound effects as Impulse Tracker modules
-for SNESMOD (converted to a soundbank by smconv).
+for SNESMOD (converted to a soundbank by smconv). Module order matters: the
+effects module comes first and the game plays stage N as MOD_STAGE1 + N.
 
-  build/sfx.it     sound effect samples (must be the first module)
-  build/title.it   title theme, a gentle take on the stage tune
-  build/stage1.it  "FFA Hoedown", the stage 1 theme (G major, 150 BPM)
-  build/clear.it   stage clear fanfare (plays once)
+  sfx.it      sound effect samples
+  title.it    "Comrades", the title theme
+  stage1.it   "FFA Hoedown"           fiddle hoedown, G major, 150 BPM
+  stage2.it   "Jam Sessions"          garage pop rock, E major, 124 BPM
+  stage3.it   "Last Call"             punk rock, A major, 184 BPM
+  stage4.it   "Lakefront"             festival house groove, D minor, 124 BPM
+  stage5.it   "Order in the Court"    castle march, A minor, 104 BPM
+  stage6.it   "Shuffleboard Shuffle"  easy swing, C major, 100 BPM
+  boss.it     "Showdown"              driving minor rock, 164 BPM
+  clear.it    stage clear fanfare (plays once)
+  race.it     "Coast Highway"         fast rock, D major, 172 BPM
+  range.it    "High Noon"             spaghetti western, A minor, 132 BPM
+  ending.it   "Comrades for Life"     slow reprise of the title
 
-Instruments are synthesised here: a soft saw "fiddle" lead, pulse chords,
-a round bass, and kick/snare/hat drums.
+Instruments are synthesised here: leads (saw fiddle, square, soft pulse,
+whistle, overdriven guitar), a round bass, chord and arpeggio voices, and
+kick/snare/hat drums.
 """
 import os
 import sys
@@ -40,11 +51,20 @@ def wave(kind):
         w = lowpass(2 * t - 1, 0.35)
     elif kind == "pulse25":
         w = lowpass(np.where(t < 0.25, 1.0, -0.6), 0.45)
+    elif kind == "pulse12":
+        w = lowpass(np.where(t < 0.125, 1.0, -0.3), 0.5)
     elif kind == "square":
         w = lowpass(np.where(t < 0.5, 1.0, -1.0), 0.4)
     elif kind == "bass":
         tri = 1 - 4 * np.abs(t - 0.5)
         w = lowpass(0.7 * tri + 0.3 * np.where(t < 0.5, 1.0, -1.0), 0.5)
+    elif kind == "whistle":
+        w = np.sin(2 * np.pi * t) + 0.08 * np.sin(4 * np.pi * t)
+    elif kind == "organ":
+        w = np.sin(2 * np.pi * t) + 0.5 * np.sin(4 * np.pi * t) + 0.25 * np.sin(8 * np.pi * t)
+    elif kind == "dist":
+        w = np.tanh(4 * (2 * t - 1 + 0.6 * np.sin(4 * np.pi * t)))
+        w = lowpass(w, 0.55)
     w = w - w.mean()
     w = w / np.abs(w).max()
     return w * 20000
@@ -91,15 +111,25 @@ def one_shot(name, data, vol=64):
 # ------------------------------------------------------------------ instruments
 LEAD, BASS, CHORD, ARP, KICK, SNARE, HAT = range(7)
 
+LEAD_ENV = {
+    "saw": [(0, 40), (3, 64), (14, 50), (80, 42)],
+    "square": [(0, 48), (2, 60), (12, 44), (60, 36)],
+    "pulse25": [(0, 50), (2, 60), (16, 40), (60, 30)],
+    "pulse12": [(0, 50), (2, 58), (16, 40), (60, 30)],
+    "whistle": [(0, 30), (5, 60), (30, 52), (90, 44)],
+    "organ": [(0, 56), (4, 52), (100, 48)],
+    "dist": [(0, 64), (10, 52), (60, 40)],
+}
 
-def song_kit():
-    samples = [looped("fiddle", "saw"), looped("bass", "bass"), looped("chord", "pulse25", 48),
-               looped("arp", "square", 48), one_shot("kick", kick()), one_shot("snare", snare()),
+
+def song_kit(lead="saw", chord="pulse25", arp="square", chord_env=None, chord_vol=48):
+    samples = [looped("lead", lead), looped("bass", "bass"), looped("chord", chord, chord_vol),
+               looped("arp", arp, 48), one_shot("kick", kick()), one_shot("snare", snare()),
                one_shot("hat", hat(), 40)]
     instruments = [
-        Instrument("fiddle", LEAD, envelope=[(0, 40), (3, 64), (14, 50), (80, 42)]),
+        Instrument("lead", LEAD, envelope=LEAD_ENV[lead]),
         Instrument("bass", BASS, envelope=[(0, 64), (10, 52), (40, 30), (90, 0)]),
-        Instrument("chord", CHORD, envelope=[(0, 56), (6, 30), (16, 0)]),
+        Instrument("chord", CHORD, envelope=chord_env or [(0, 56), (6, 30), (16, 0)]),
         Instrument("arp", ARP, envelope=[(0, 50), (8, 24), (30, 0)]),
         Instrument("kick", KICK),
         Instrument("snare", SNARE),
@@ -108,15 +138,255 @@ def song_kit():
     return samples, instruments
 
 
-# ------------------------------------------------------------------ the tune
-# chords per bar (two chords = half a bar each)
-PROGRESSION = ["G", "C", "D", "G", "G", "C", "Em D", "G",
-               "C", "G", "Am", "D", "G", "Em", "C D", "G"]
-CHORDS = {"G": ("G2", "B3", "D4"), "C": ("C3", "E4", "G4"), "D": ("D3", "F#4", "A4"),
-          "Em": ("E2", "G4", "B4"), "Am": ("A2", "C4", "E4")}
-FIFTH = {"G": "D3", "C": "G2", "D": "A2", "Em": "B2", "Am": "E3"}
+# ------------------------------------------------------------------ harmony helpers
+NOTE_BASE = {"C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3, "E": 4, "F": 5, "F#": 6, "Gb": 6,
+             "G": 7, "G#": 8, "Ab": 8, "A": 9, "A#": 10, "Bb": 10, "B": 11}
 
-MELODY = [
+
+def chord_notes(name):
+    """'Em' -> (bass note, [chord tones]) as IT note numbers. Supports
+    major, m, 7, m7, maj7, dim, sus4 and 5 (power chord)."""
+    root = name[:2] if len(name) > 1 and name[1] in "#b" else name[:1]
+    q = name[len(root):]
+    r = NOTE_BASE[root]
+    ivs = {"": (0, 4, 7), "m": (0, 3, 7), "7": (0, 4, 7, 10), "m7": (0, 3, 7, 10), "maj7": (0, 4, 7, 11),
+           "dim": (0, 3, 6), "sus4": (0, 5, 7), "5": (0, 7, 12)}[q]
+    bass = 36 + r if r >= 4 else 48 + r          # E2..D#3 range
+    tones = [60 + r + i for i in ivs]             # around middle C
+    while tones[0] > 64:
+        tones = [t - 12 for t in tones]
+    return bass, tones
+
+
+class Track:
+    """Collects cells on an absolute row timeline for one channel."""
+
+    def __init__(self):
+        self.cells = {}
+
+    def put(self, row, cell):
+        self.cells[row] = cell
+
+
+def parse_bar(s):
+    out = []
+    for tok in s.split():
+        n, d = tok.split(":")
+        out.append((n, int(d)))
+    assert sum(d for _, d in out) == 16, s
+    return out
+
+
+def melody_track(bars, ins, vol=None, transpose=0, vibrato=True, vib=0x53):
+    tr = Track()
+    row = 0
+    for bar in bars:
+        if isinstance(bar, str):
+            bar = parse_bar(bar)
+        for name, length in bar:
+            if name == "r":
+                tr.put(row, Cell(note=NOTE_OFF))
+            elif name == "-":
+                pass                                  # tie
+            else:
+                tr.put(row, Cell(note=note(name) + transpose, ins=ins, vol=vol))
+                if vibrato and length >= 4:
+                    for k in range(2, length):
+                        tr.put(row + k, Cell(cmd=8, arg=vib))      # Hxy vibrato
+            row += length
+    return tr
+
+
+def bar_chords(prog, b):
+    return prog[b % len(prog)].split()
+
+
+def chord_at(prog, b, r):
+    cs = bar_chords(prog, b)
+    return cs[0] if (len(cs) == 1 or r < 8) else cs[1]
+
+
+def bass_track(prog, nbars, style="root5", vol=None):
+    tr = Track()
+    for b in range(nbars):
+        base = b * 16
+        for r in range(16):
+            c = chord_at(prog, b, r)
+            bn, tones = chord_notes(c)
+            fifth = bn + 7
+            third = bn + (tones[1] - tones[0])
+            if style == "root5":
+                if r in (0, 8):
+                    tr.put(base + r, Cell(note=bn if r == 0 else fifth, ins=BASS, vol=vol))
+                elif r in (6, 14):
+                    tr.put(base + r, Cell(note=bn if r == 6 else fifth + 2, ins=BASS, vol=40))
+            elif style == "eighths":
+                if r % 2 == 0:
+                    tr.put(base + r, Cell(note=bn + (12 if r in (6, 14) else 0), ins=BASS, vol=vol or 56))
+            elif style == "walk":
+                if r % 4 == 0:
+                    tr.put(base + r, Cell(note=[bn, third, fifth, bn + 9][r // 4], ins=BASS, vol=vol))
+            elif style == "synco":
+                if r in (0, 3, 6, 10, 12, 14):
+                    tr.put(base + r, Cell(note=bn + (12 if r in (6, 14) else 0), ins=BASS, vol=vol))
+                if r in (2, 8):
+                    tr.put(base + r, Cell(note=NOTE_CUT))
+            elif style == "gallop":
+                if r % 4 in (0, 2, 3):
+                    tr.put(base + r, Cell(note=bn if r % 8 < 4 else fifth, ins=BASS, vol=vol or 52))
+            elif style == "sixteenths":
+                if r % 2 == 0 or r in (13, 15):
+                    tr.put(base + r, Cell(note=bn + (7 if r in (12, 14) else 0), ins=BASS, vol=vol or 54))
+            elif style == "whole":
+                if r in (0, 8):
+                    tr.put(base + r, Cell(note=bn, ins=BASS, vol=vol))
+    return tr
+
+
+def comp_tracks(prog, nbars, style="chuck"):
+    """Two chord voices (third and fifth) in an accompaniment pattern."""
+    t3, t5 = Track(), Track()
+    rows = {"chuck": (4, 12, 14), "strum": (0, 6, 8, 12, 14), "power": tuple(range(0, 16, 2)),
+            "stab": (2, 6, 10, 11), "organ": (0, 8), "march": (0, 4, 8, 12), "swing": (4, 12),
+            "offbeat": (2, 6, 10, 14)}[style]
+    for b in range(nbars):
+        for r in rows:
+            c = chord_at(prog, b, r)
+            bn, tones = chord_notes(c)
+            v = 48 if style != "organ" else 40
+            if style == "chuck" and r == 14:
+                v = 34
+            if style == "power":
+                n3, n5 = tones[0] - 12 + 12, tones[0] + 7
+                v = 44 if r % 4 == 0 else 36
+            else:
+                n3, n5 = tones[1], tones[2]
+            t3.put(b * 16 + r, Cell(note=n3, ins=CHORD, vol=v))
+            t5.put(b * 16 + r, Cell(note=n5, ins=CHORD, vol=v))
+    return t3, t5
+
+
+def arp_track(prog, nbars, step=2, vol=36, octave=12):
+    tr = Track()
+    for b in range(nbars):
+        for r in range(0, 16, step):
+            c = chord_at(prog, b, r)
+            bn, tones = chord_notes(c)
+            seq = [tones[0] + octave, tones[1] + octave, tones[2] + octave, tones[1] + octave + 12]
+            tr.put(b * 16 + r, Cell(note=seq[(r // step) % 4], ins=ARP, vol=vol if r % 4 else vol + 8))
+    return tr
+
+
+def drum_tracks(nbars, style="rock", fill_every=4):
+    ks, hh = Track(), Track()
+    K = lambda r, v=64: ks.put(r, Cell(note=60, ins=KICK, vol=v))
+    S = lambda r, v=52: ks.put(r, Cell(note=60, ins=SNARE, vol=v))
+    H = lambda r, v=30: hh.put(r, Cell(note=60, ins=HAT, vol=v))
+    for b in range(nbars):
+        o = b * 16
+        if style == "rock":
+            K(o); K(o + 8); K(o + 10, 50); S(o + 4); S(o + 12)
+            for r in range(0, 16, 2):
+                H(o + r, 30 if r % 4 else 18)
+        elif style == "hoedown":
+            K(o); K(o + 8); S(o + 4); S(o + 12)
+            for r in range(2, 16, 4):
+                H(o + r, 30)
+            for r in range(0, 16, 4):
+                H(o + r, 14)
+        elif style == "punk":
+            for r in (0, 6, 8, 14):
+                K(o + r, 64 if r in (0, 8) else 50)
+            S(o + 4, 58); S(o + 12, 58)
+            for r in range(0, 16, 2):
+                H(o + r, 34)
+        elif style == "four":
+            for r in (0, 4, 8, 12):
+                K(o + r)
+            S(o + 4, 40); S(o + 12, 44)
+            for r in (2, 6, 10, 14):
+                H(o + r, 36)
+            H(o + 15, 16)
+        elif style == "march":
+            K(o); K(o + 8)
+            S(o + 4, 44); S(o + 12, 44)
+            if b % 2 == 1:
+                for r in (13, 14, 15):
+                    S(o + r, 30 + (r - 13) * 6)
+        elif style == "swing":
+            K(o, 48); K(o + 8, 44)
+            S(o + 4, 30); S(o + 12, 30)
+            for r in (0, 3, 4, 7, 8, 11, 12, 15):
+                H(o + r, 26 if r % 4 == 0 else 16)
+        elif style == "gallop":
+            K(o); K(o + 8)
+            S(o + 4, 46); S(o + 12, 46)
+            for r in range(16):
+                if r % 4 in (0, 2, 3):
+                    H(o + r, 24 if r % 4 == 0 else 16)
+        elif style == "drive":
+            for r in (0, 3, 6, 8, 11, 14):
+                K(o + r, 60)
+            S(o + 4, 56); S(o + 12, 56)
+            for r in range(16):
+                H(o + r, 26 if r % 2 == 0 else 12)
+        elif style == "soft":
+            K(o, 40); S(o + 8, 26)
+            for r in range(0, 16, 4):
+                H(o + r, 14)
+        if fill_every and b % fill_every == fill_every - 1 and style not in ("soft", "swing", "march"):
+            for r in (12, 13, 14, 15):
+                ks.cells.pop(o + r, None)
+            S(o + 12, 40); S(o + 13, 44); S(o + 14, 50); S(o + 15, 56)
+    return ks, hh
+
+
+def to_patterns(tracks, nrows, per=64):
+    pats = []
+    for p in range(nrows // per):
+        rows = []
+        for r in range(per):
+            rows.append([tr.cells.get(p * per + r) for tr in tracks])
+        pats.append(rows)
+    return pats
+
+
+PANS = [32, 28, 16, 48, 32, 40, 24, 32]
+
+
+def song(path, title, kit, tempo, prog, melody, bass="root5", comp="chuck", drums="rock",
+         arp=None, lead_vol=None, lead_transpose=0, second_half="octave", speed=6):
+    """Builds a 16 bar song: the 8 (or 16) bar melody, and for 8 bar
+    melodies a second pass with the lead up an octave over an arpeggio."""
+    samples, instruments = kit
+    melody = [parse_bar(b) if isinstance(b, str) else b for b in melody]
+    if len(melody) == 8:
+        if second_half == "octave":
+            lead = melody_track(melody, LEAD, vol=lead_vol, transpose=lead_transpose)
+            lead2 = melody_track(melody, LEAD, vol=lead_vol, transpose=lead_transpose + 12)
+            for r, c in lead2.cells.items():
+                lead.put(r + 128, c)
+        else:
+            lead = melody_track(melody + melody, LEAD, vol=lead_vol, transpose=lead_transpose)
+    else:
+        lead = melody_track(melody, LEAD, vol=lead_vol, transpose=lead_transpose)
+    nbars = 16
+    t3, t5 = comp_tracks(prog, nbars, comp)
+    ks, hh = drum_tracks(nbars, drums)
+    tracks = [lead, bass_track(prog, nbars, bass), t3, t5, ks, hh]
+    if arp:
+        a = arp_track(prog, nbars, **arp)
+        if len(melody) == 8 and second_half == "octave":
+            a.cells = {r: c for r, c in a.cells.items() if r >= 128}
+        tracks.append(a)
+    pats = to_patterns(tracks, nbars * 16)
+    write_it(os.path.join(BUILD, path), title, samples, instruments, pats, list(range(len(pats))),
+             speed=speed, tempo=tempo, nchan=len(tracks), pans=PANS[:len(tracks)])
+
+
+# ------------------------------------------------------------------ stage 1: FFA Hoedown
+FFA_PROG = ["G", "C", "D", "G", "G", "C", "Em D", "G", "C", "G", "Am", "D", "G", "Em", "C D", "G"]
+FFA_MELODY = [
     [("B4", 2), ("D5", 2), ("G5", 4), ("F#5", 2), ("E5", 2), ("D5", 4)],
     [("E5", 2), ("G5", 2), ("E5", 2), ("C5", 2), ("D5", 4), ("E5", 4)],
     [("F#5", 2), ("A5", 2), ("F#5", 2), ("D5", 2), ("E5", 2), ("F#5", 2), ("A5", 4)],
@@ -136,139 +406,160 @@ MELODY = [
 ]
 
 
-class Track:
-    """Collects cells on an absolute row timeline for one channel."""
-
-    def __init__(self):
-        self.cells = {}
-
-    def put(self, row, cell):
-        self.cells[row] = cell
+def stage1():
+    song("stage1.it", "FFA Hoedown", song_kit("saw"), 150, FFA_PROG, FFA_MELODY,
+         bass="root5", comp="chuck", drums="hoedown")
 
 
-def melody_track(bars, ins, vol=None, transpose=0, vibrato=True):
-    tr = Track()
-    row = 0
-    for bar in bars:
-        for name, length in bar:
-            if name == "r":
-                tr.put(row, Cell(note=NOTE_OFF))
-            else:
-                tr.put(row, Cell(note=note(name) + transpose, ins=ins, vol=vol))
-                if vibrato and length >= 4:
-                    for k in range(2, length):
-                        tr.put(row + k, Cell(cmd=8, arg=0x53))      # Hxy vibrato
-            row += length
-    return tr
+# ------------------------------------------------------------------ stage 2: Jam Sessions
+def stage2():
+    prog = ["E", "B", "C#m", "A", "E", "B", "A", "B"]
+    mel = ["G#4:2 B4:2 E5:4 D#5:2 E5:2 F#5:4",
+           "D#5:4 B4:4 r:2 B4:2 C#5:2 D#5:2",
+           "E5:2 E5:2 C#5:4 E5:2 G#5:2 F#5:4",
+           "E5:4 C#5:2 B4:2 A4:4 r:4",
+           "G#4:2 B4:2 E5:4 F#5:2 G#5:2 A5:4",
+           "F#5:4 D#5:4 B4:2 C#5:2 D#5:4",
+           "C#5:2 E5:2 A5:4 G#5:2 F#5:2 E5:4",
+           "F#5:8 D#5:4 B4:4"]
+    song("stage2.it", "Jam Sessions", song_kit("square", "pulse25"), 124, prog, mel,
+         bass="eighths", comp="strum", drums="rock", arp=dict(step=2, vol=30))
 
 
-def chord_list(bar_index):
-    return PROGRESSION[bar_index % 16].split()
+# ------------------------------------------------------------------ stage 3: Last Call (punk)
+def stage3():
+    prog = ["A5", "A5", "D5", "E5", "F#5", "D5", "E5", "E5"]
+    mel = ["A4:4 C#5:4 E5:4 C#5:4",
+           "B4:2 A4:2 B4:4 C#5:8",
+           "D5:4 F#5:4 A5:4 F#5:4",
+           "E5:2 E5:2 G#5:4 B5:4 r:4",
+           "F#5:4 A5:4 F#5:2 E5:2 C#5:4",
+           "D5:4 C#5:2 B4:2 A4:8",
+           "B4:2 C#5:2 E5:4 G#5:2 B5:2 E5:4",
+           "E5:8 r:4 E5:2 E5:2"]
+    song("stage3.it", "Last Call", song_kit("dist", "dist", chord_env=[(0, 50), (4, 40), (8, 0)], chord_vol=44),
+         184, prog, mel, bass="eighths", comp="power", drums="punk")
 
 
-def bass_track(nbars):
-    tr = Track()
-    for b in range(nbars):
-        chords = chord_list(b)
-        base = b * 16
-        if len(chords) == 1:
-            c = chords[0]
-            tr.put(base, Cell(note=note(CHORDS[c][0]), ins=BASS))
-            tr.put(base + 6, Cell(note=note(CHORDS[c][0]), ins=BASS, vol=40))
-            tr.put(base + 8, Cell(note=note(FIFTH[c]), ins=BASS))
-            tr.put(base + 14, Cell(note=note(FIFTH[c]) + 2, ins=BASS, vol=44))
-        else:
-            for k, c in enumerate(chords):
-                tr.put(base + k * 8, Cell(note=note(CHORDS[c][0]), ins=BASS))
-                tr.put(base + k * 8 + 4, Cell(note=note(FIFTH[c]), ins=BASS))
-    return tr
+# ------------------------------------------------------------------ stage 4: Lakefront (festival groove)
+def stage4():
+    prog = ["Dm7", "Dm7", "Gm7", "A7", "Dm7", "Bb", "Gm7", "A7"]
+    mel = ["D5:3 F5:3 A5:2 r:2 G5:2 F5:2 D5:2",
+           "r:4 C5:2 D5:2 F5:4 D5:4",
+           "G5:3 Bb5:3 D6:2 r:2 C6:2 Bb5:2 G5:2",
+           "A5:6 G5:2 E5:4 C#5:4",
+           "D5:3 F5:3 A5:2 r:2 C6:2 A5:2 F5:2",
+           "Bb5:4 A5:2 F5:2 D5:4 r:4",
+           "G5:2 G5:2 Bb5:2 A5:2 G5:4 F5:4",
+           "E5:4 C#5:4 A4:4 r:4"]
+    song("stage4.it", "Lakefront", song_kit("pulse12", "pulse25", "square"), 124, prog, mel,
+         bass="synco", comp="stab", drums="four", arp=dict(step=1, vol=24))
 
 
-def chuck_tracks(nbars):
-    """Off-beat chord stabs on beats 2 and 4 (and the 'and' of 4)."""
-    t3, t5 = Track(), Track()
-    for b in range(nbars):
-        chords = chord_list(b)
-        for k, row in enumerate((4, 12, 14)):
-            c = chords[0] if (len(chords) == 1 or row < 8) else chords[1]
-            v = 48 if row != 14 else 34
-            t3.put(b * 16 + row, Cell(note=note(CHORDS[c][1]), ins=CHORD, vol=v))
-            t5.put(b * 16 + row, Cell(note=note(CHORDS[c][2]), ins=CHORD, vol=v))
-    return t3, t5
+# ------------------------------------------------------------------ stage 5: Order in the Court
+def stage5():
+    prog = ["Am", "Dm", "E", "Am", "F", "C", "Dm E", "Am"]
+    mel = ["A4:4 C5:2 E5:2 A5:6 G#5:2",
+           "A5:2 F5:2 D5:4 F5:4 A5:4",
+           "G#5:4 B5:4 E5:4 D5:2 C5:2",
+           "C5:2 B4:2 A4:4 E4:4 A4:4",
+           "C5:4 F5:4 A5:4 G5:2 F5:2",
+           "E5:4 G5:4 C6:4 B5:2 A5:2",
+           "F5:2 E5:2 D5:4 B4:2 C5:2 D5:2 G#5:2",
+           "A5:12 r:4"]
+    song("stage5.it", "Order in the Court",
+         song_kit("organ", "pulse12", "pulse12", chord_env=[(0, 50), (20, 30), (60, 0)]),
+         104, prog, mel, bass="walk", comp="march", drums="march", arp=dict(step=2, vol=30))
 
 
-def drum_tracks(nbars):
-    ks, hh = Track(), Track()
-    for b in range(nbars):
-        base = b * 16
-        ks.put(base, Cell(note=note("C5"), ins=KICK, vol=64))
-        ks.put(base + 8, Cell(note=note("C5"), ins=KICK, vol=64))
-        ks.put(base + 4, Cell(note=note("C5"), ins=SNARE, vol=52))
-        ks.put(base + 12, Cell(note=note("C5"), ins=SNARE, vol=52))
-        if b % 4 == 3:                          # little fill every 4 bars
-            ks.put(base + 10, Cell(note=note("C5"), ins=KICK, vol=56))
-            ks.put(base + 14, Cell(note=note("C5"), ins=SNARE, vol=40))
-            ks.put(base + 15, Cell(note=note("C5"), ins=SNARE, vol=46))
-        for r in range(2, 16, 4):
-            hh.put(base + r, Cell(note=note("C5"), ins=HAT, vol=30))
-        for r in range(0, 16, 4):
-            hh.put(base + r, Cell(note=note("C5"), ins=HAT, vol=14))
-    return ks, hh
+# ------------------------------------------------------------------ stage 6: Shuffleboard Shuffle
+def stage6():
+    prog = ["C", "Am", "Dm", "G7", "C", "A7", "Dm G7", "C"]
+    mel = ["E5:3 G5:1 E5:4 C5:4 r:4",
+           "C5:3 E5:1 A5:4 G5:4 E5:4",
+           "F5:3 A5:1 F5:4 D5:4 F5:4",
+           "B4:3 D5:1 G5:8 r:4",
+           "E5:3 G5:1 C6:4 B5:4 A5:4",
+           "C#5:3 E5:1 A5:4 G5:4 E5:4",
+           "F5:3 A5:1 D6:4 B5:3 G5:1 F5:4",
+           "E5:8 C5:4 r:4"]
+    song("stage6.it", "Shuffleboard Shuffle", song_kit("whistle", "pulse25", chord_env=[(0, 44), (8, 30), (24, 0)]),
+         100, prog, mel, bass="walk", comp="swing", drums="swing", second_half="repeat")
 
 
-def arp_track(nbars):
-    tr = Track()
-    for b in range(nbars):
-        chords = chord_list(b)
-        for r in range(16):
-            c = chords[0] if (len(chords) == 1 or r < 8) else chords[1]
-            tones = [note(CHORDS[c][0]) + 12, note(CHORDS[c][1]), note(CHORDS[c][2]), note(CHORDS[c][1]) + 12]
-            if r % 2 == 0:
-                tr.put(b * 16 + r, Cell(note=tones[(r // 2) % 4], ins=ARP, vol=36 if r % 4 else 44))
-    return tr
+# ------------------------------------------------------------------ boss: Showdown
+def boss():
+    prog = ["Em", "C", "D", "B", "Em", "C", "Am", "B"]
+    mel = ["E5:4 r:2 E5:2 G5:4 F#5:4",
+           "E5:2 D5:2 E5:4 G5:2 A5:2 B5:4",
+           "A5:4 F#5:4 D5:4 A5:4",
+           "B5:8 D#5:4 F#5:4",
+           "E5:4 r:2 E5:2 B5:4 A5:4",
+           "G5:2 F#5:2 E5:4 G5:4 C6:4",
+           "B5:4 A5:4 G5:2 F#5:2 E5:4",
+           "D#5:8 F#5:4 B5:4"]
+    song("boss.it", "Showdown", song_kit("dist", "pulse25", "square"), 164, prog, mel,
+         bass="sixteenths", comp="offbeat", drums="drive")
 
 
-def to_patterns(tracks, nrows, per=64):
-    pats = []
-    for p in range(nrows // per):
-        rows = []
-        for r in range(per):
-            rows.append([tr.cells.get(p * per + r) for tr in tracks])
-        pats.append(rows)
-    return pats
+# ------------------------------------------------------------------ race: Coast Highway
+def race():
+    prog = ["D", "C", "G", "D", "D", "C", "G", "A"]
+    mel = ["F#5:2 A5:2 D6:4 C6:2 A5:2 F#5:4",
+           "G5:4 E5:2 C5:2 E5:4 G5:4",
+           "B5:4 G5:2 D5:2 G5:2 A5:2 B5:4",
+           "A5:8 F#5:4 D5:4",
+           "F#5:2 A5:2 D6:4 E6:2 D6:2 A5:4",
+           "C6:4 G5:2 E5:2 G5:4 C6:4",
+           "B5:2 A5:2 G5:4 D5:4 B5:4",
+           "A5:8 C#6:4 E6:4"]
+    song("race.it", "Coast Highway", song_kit("square", "dist", chord_env=[(0, 48), (4, 36), (8, 0)], chord_vol=40),
+         172, prog, mel, bass="eighths", comp="power", drums="drive")
 
 
-PANS = [32, 28, 16, 48, 32, 40, 24, 32]
+# ------------------------------------------------------------------ range: High Noon
+def range_theme():
+    prog = ["Am", "G", "F", "E", "Am", "G", "F", "E"]
+    mel = ["A4:2 E5:2 A5:8 G5:2 E5:2",
+           "D5:2 G5:2 B5:8 A5:2 G5:2",
+           "F5:4 A5:4 C6:4 A5:4",
+           "G#5:12 r:4",
+           "A5:2 A5:2 C6:4 B5:2 A5:2 G5:4",
+           "G5:2 D5:2 B4:4 D5:4 G5:4",
+           "F5:2 E5:2 F5:2 A5:2 C6:4 B5:2 A5:2",
+           "B5:8 G#5:4 E5:4"]
+    song("range.it", "High Noon", song_kit("whistle", "pulse12", chord_env=[(0, 50), (6, 30), (14, 0)]),
+         132, prog, mel, bass="gallop", comp="offbeat", drums="gallop", second_half="repeat")
 
 
-def stage_theme():
-    samples, instruments = song_kit()
-    nbars = 16
-    lead = melody_track(MELODY, LEAD)
-    t3, t5 = chuck_tracks(nbars)
-    ks, hh = drum_tracks(nbars)
-    pats = to_patterns([lead, bass_track(nbars), t3, t5, ks, hh], nbars * 16)
-    # intro pattern: drums + chords only, then the tune loops
-    write_it(os.path.join(BUILD, "stage1.it"), "FFA Hoedown", samples, instruments, pats,
-             [0, 1, 2, 3], speed=6, tempo=150, nchan=6, pans=PANS)
-
-
+# ------------------------------------------------------------------ title and ending
 def title_theme():
-    samples, instruments = song_kit()
+    samples, instruments = song_kit("saw")
     nbars = 16
-    lead = melody_track(MELODY[8:] + MELODY[8:], LEAD, vol=44, transpose=-12)
+    lead = melody_track(FFA_MELODY[8:] + FFA_MELODY[8:], LEAD, vol=44, transpose=-12)
     bass = Track()
     for b in range(nbars):
-        for k, c in enumerate(chord_list(b)):
-            bass.put(b * 16 + k * 8, Cell(note=note(CHORDS[c][0]), ins=BASS, vol=48))
-    pats = to_patterns([lead, bass, arp_track(nbars)], nbars * 16)
-    # first half of the loop without the melody, so the title opens softly
+        for k, c in enumerate(bar_chords(FFA_PROG, b)):
+            bass.put(b * 16 + k * 8, Cell(note=chord_notes(c)[0], ins=BASS, vol=48))
+    pats = to_patterns([lead, bass, arp_track(FFA_PROG, nbars)], nbars * 16)
     write_it(os.path.join(BUILD, "title.it"), "Comrades", samples, instruments, pats,
              [0, 1, 2, 3], speed=6, tempo=110, nchan=3, pans=[32, 32, 32])
 
 
+def ending_theme():
+    samples, instruments = song_kit("whistle", "pulse25", chord_env=[(0, 40), (16, 28), (60, 0)])
+    nbars = 16
+    lead = melody_track(FFA_MELODY, LEAD, vol=44, transpose=-12, vib=0x42)
+    bass = bass_track(FFA_PROG, nbars, "whole", vol=44)
+    t3, t5 = comp_tracks(FFA_PROG, nbars, "organ")
+    ks, hh = drum_tracks(nbars, "soft")
+    pats = to_patterns([lead, bass, t3, t5, ks, hh, arp_track(FFA_PROG, nbars, step=4, vol=24)], nbars * 16)
+    write_it(os.path.join(BUILD, "ending.it"), "Comrades for Life", samples, instruments, pats,
+             [0, 1, 2, 3], speed=6, tempo=84, nchan=7, pans=PANS[:7])
+
+
 def clear_fanfare():
-    samples, instruments = song_kit()
+    samples, instruments = song_kit("saw")
     fan = [("G5", 2), ("G5", 2), ("G5", 2), ("D5", 2), ("G5", 4), ("B5", 4),
            ("A5", 2), ("B5", 2), ("C6", 2), ("A5", 2), ("D6", 8), ("r", 8)]
     lead = melody_track([fan], LEAD, vibrato=True)
@@ -277,8 +568,9 @@ def clear_fanfare():
         bass.put(r, Cell(note=note(n), ins=BASS))
     t3, t5 = Track(), Track()
     for r, c in ((0, "G"), (8, "G"), (16, "D"), (24, "G")):
-        t3.put(r, Cell(note=note(CHORDS[c][1]), ins=CHORD))
-        t5.put(r, Cell(note=note(CHORDS[c][2]), ins=CHORD))
+        tones = chord_notes(c)[1]
+        t3.put(r, Cell(note=tones[1], ins=CHORD))
+        t5.put(r, Cell(note=tones[2], ins=CHORD))
     ks = Track()
     for r in (0, 4, 8, 12, 16, 20, 22, 24):
         ks.put(r, Cell(note=note("C5"), ins=KICK if r % 8 == 0 else SNARE))
@@ -314,7 +606,12 @@ def noise(dur, decay, a=0.5, seed=1):
     return x * np.exp(-t * decay)
 
 
-SFX = ["jump", "throw", "splat", "stomp", "hurt", "bleat", "land"]
+def tone(freqs, dur_each, shape="square", decay=10):
+    return np.concatenate([sweep(f, f, dur_each, shape, decay) for f in freqs])
+
+
+SFX = ["jump", "throw", "splat", "stomp", "hurt", "bleat", "land", "heart", "bang", "ding", "crash", "boost",
+       "roar", "select", "powerup"]
 
 
 def mix(*parts):
@@ -332,14 +629,27 @@ def sfx_samples():
     out["splat"] = mix(noise(0.14, 26, 0.25, 3), sweep(300, 90, 0.14, "sine", 18) * 0.7) * 22000
     out["stomp"] = mix(sweep(220, 55, 0.16, "sine", 12), noise(0.08, 40, 0.3, 4) * 0.5) * 26000
     out["hurt"] = lowpass(sweep(700, 140, 0.28, "square", 5), 0.45) * 15000
-    # goat bleat: buzzy tone with a wobble
-    n = int(SR * 0.32)
+    # critter bleat: buzzy tone with a wobble
+    n = int(SR * 0.26)
     t = np.arange(n) / SR
     f = 330 + 40 * np.sin(2 * np.pi * 14 * t)
     ph = np.cumsum(f) / SR
-    w = lowpass(2 * (ph % 1) - 1, 0.3) * np.minimum(1, t * 30) * np.exp(-t * 6)
+    w = lowpass(2 * (ph % 1) - 1, 0.3) * np.minimum(1, t * 30) * np.exp(-t * 7)
     out["bleat"] = w * 22000
     out["land"] = noise(0.06, 50, 0.15, 5) * 18000
+    out["heart"] = lowpass(tone([660, 880, 1320], 0.06, "square", 8), 0.5) * 14000
+    out["bang"] = mix(noise(0.22, 16, 0.7, 9), sweep(160, 50, 0.2, "sine", 14) * 0.8) * 28000
+    out["ding"] = mix(sweep(1760, 1760, 0.35, "sine", 7), sweep(2640, 2640, 0.3, "sine", 12) * 0.4) * 20000
+    out["crash"] = mix(noise(0.4, 7, 0.6, 11), sweep(200, 60, 0.3, "square", 8) * 0.3) * 24000
+    out["boost"] = lowpass(sweep(200, 1400, 0.3, "square", 3), 0.4) * 13000
+    n = int(SR * 0.5)
+    t = np.arange(n) / SR
+    f = 110 + 30 * np.sin(2 * np.pi * 9 * t)
+    ph = np.cumsum(f) / SR
+    roar = lowpass(np.tanh(3 * np.sin(2 * np.pi * ph)), 0.35) * np.minimum(1, t * 12) * np.exp(-t * 3)
+    out["roar"] = mix(roar, noise(0.5, 4, 0.2, 13) * 0.5) * 24000
+    out["select"] = lowpass(tone([990, 1320], 0.04, "square", 20), 0.5) * 12000
+    out["powerup"] = lowpass(tone([523, 659, 784, 1047, 1319], 0.05, "square", 6), 0.5) * 14000
     return [one_shot(k, out[k]) for k in SFX]
 
 
@@ -355,12 +665,19 @@ def sfx_module():
         f.write(f"#define SFX_COUNT {len(SFX)}\n")
 
 
-
-
 if __name__ == "__main__":
     os.makedirs(BUILD, exist_ok=True)
     sfx_module()
     title_theme()
-    stage_theme()
+    stage1()
+    stage2()
+    stage3()
+    stage4()
+    stage5()
+    stage6()
+    boss()
     clear_fanfare()
+    race()
+    range_theme()
+    ending_theme()
     print("music written")

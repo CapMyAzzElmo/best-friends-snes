@@ -13,6 +13,8 @@ def note(name):
     """'G5' -> IT note number (C-0 = 0, C-5 = 60)."""
     if name[1] == "#":
         return NOTE_NAMES[name[:2]] + 12 * int(name[2:])
+    if name[1] == "b":
+        return NOTE_NAMES[name[0]] - 1 + 12 * int(name[2:])
     return NOTE_NAMES[name[0]] + 12 * int(name[1:])
 
 
