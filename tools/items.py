@@ -1,6 +1,7 @@
 """Pickups, checkpoint flags, weapon shots and breakable props (16x16, sprite palette 3).
 
-Writes build/items.pic + build/items.pal and art/sprites/items.png.
+Writes build/items.pic + build/items.pal, build/boom.pic (the blast as whole
+32x32 frames) and art/sprites/items.png.
 
 Frames (see the IF_* defines in src/game.h):
    0      checkpoint flag lowered
@@ -15,6 +16,8 @@ Frames (see the IF_* defines in src/game.h):
   19-30   breakable props, two frames per stage (whole, cracked):
           feed crate, record box, trash can, cooler, file box, gift box
   31-32   score popup sparkle
+  33-36   giant spoon catapult (32x16 as two halves): at rest, then flung
+  37      pool raft, left half (the game mirrors it for the right)
 """
 import math
 import os
@@ -294,6 +297,44 @@ def sparkle(phase):
     return c
 
 
+def spoon(fired):
+    """A giant spoon on a wooden block, bowl loaded with grapes (32x16)."""
+    c = Canvas(32, 16)
+    # the block it pivots on
+    fill(c, 12, 11, 20, 16, BRN)
+    frame_box(c, 12, 11, 20, 16, DBRN)
+    if not fired:
+        capsule(c, (3, 10), (22, 10), 1.0, LGRAY)            # handle
+        ellipse(c, 26, 9.5, 4.8, 3.2, LGRAY)                  # bowl
+        shade(c, LGRAY, WHITE, DGRAY)
+        for (gx, gy) in ((24.5, 6.5), (27.5, 6.5), (26, 4.5)):
+            ellipse(c, gx, gy, 1.7, 1.7, RED)
+        c.set(24, 5, ORG); c.set(27, 5, ORG)
+    else:
+        capsule(c, (6, 14), (22, 6), 1.0, LGRAY)
+        ellipse(c, 25.5, 4.5, 4.4, 3.0, LGRAY)
+        shade(c, LGRAY, WHITE, DGRAY)
+        for (gx, gy) in ((28, 1.5), (30, 3)):
+            c.set(int(gx), int(gy), RED)
+    c = outline(c)
+    return [c.cropped(0, 0, 16, 16), c.cropped(16, 0, 16, 16)]
+
+
+def raft():
+    """The left half of a striped pool raft floating on the water."""
+    c = Canvas(16, 16)
+    capsule(c, (4, 9), (16, 9), 3.2, WHITE)
+    for x in range(1, 16):
+        if (x // 3) % 2 == 0:
+            for y in range(5, 14):
+                if c.get(x, y) == WHITE:
+                    c.set(x, y, RED)
+    shade(c, RED, ORG, DRED)
+    for x in range(3, 16):
+        c.set(x, 7, WHITE if x % 3 else LGRAY)
+    return outline(c)    # the right edge runs on into the mirrored half
+
+
 def frames():
     out = [flag(0), flag(1, 0), flag(1, 1), oneup(), star(0), star(1),
            badge(ORG, DRED, icon_spread), badge(BLUE, OUT, icon_rapid),
@@ -303,15 +344,27 @@ def frames():
         whole = outline(prop(s))
         out += [whole, cracked(whole.copy(), s)]
     out += [sparkle(0), sparkle(1)]
+    out += spoon(False) + spoon(True) + [raft()]
     return out
 
 
 def main():
     os.makedirs(BUILD, exist_ok=True)
     fr = frames()
-    assert len(fr) == 33
+    assert len(fr) == 38
     open(os.path.join(BUILD, "items.pic"), "wb").write(grid_pic([f.px for f in fr], 16))
     open(os.path.join(BUILD, "items.pal"), "wb").write(palette_bytes(PAL))
+    # the blast again as whole 32x32 frames, so the game draws it as one sprite
+    blasts = []
+    for phase in range(3):
+        q = boom(phase)
+        whole = [[0] * 32 for _ in range(32)]
+        for y in range(16):
+            for x in range(16):
+                v = q.px[y][x]
+                whole[y][x] = whole[y][31 - x] = whole[31 - y][x] = whole[31 - y][31 - x] = v
+        blasts.append(whole)
+    open(os.path.join(BUILD, "boom.pic"), "wb").write(grid_pic(blasts, 32))
     sheet = Canvas(16 * 8, 16 * ((len(fr) + 7) // 8))
     for i, f in enumerate(fr):
         sheet.blit(f, (i % 8) * 16, (i // 8) * 16)

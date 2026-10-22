@@ -15,13 +15,17 @@ Download [`rom/comrades.sfc`](rom/comrades.sfc) and open it in any SNES emulator
 
 | Button | Platforming | Road Ride | The Range |
 | --- | --- | --- | --- |
-| D-pad | Move | Up/Down change lanes | Aim |
+| D-pad | Move, Down to crouch | Up/Down change lanes | Aim |
 | B | Jump (hold for higher) | Throttle | Fire |
-| Y | Throw / fire (hold for Rapid) | | Reload |
+| Y | Throw / fire. Hold and let go for a charged shot | | Reload |
 | Start | Pause menu | | |
 
 On the title screen, **Select** picks the chapter to start from. Left/Right on a chapter
 card switches between Jon and Wes.
+
+**Crouch** (Down) to duck under high shots, sound waves and swooping bosses. **Charge**
+by holding Y: sparks gather at your hand and it flashes when it's ready, then let go for
+a bigger, stronger version of your weapon.
 
 You can stomp enemies or hit them with your throw. Hold B while stomping for a big bounce,
 and chain stomps without landing for double points each time. Hazards (troughs, pits, storm
@@ -37,13 +41,13 @@ from the start of the chapter with your score reset.
 crack on the first hit and break on the second (a bomb or a stomp breaks them at once).
 They hide stars, hearts, 1UPs and weapons:
 
-| Weapon | |
-| --- | --- |
-| Grapes | The default lob |
-| Spread | Three lobs at once |
-| Rapid | Hold Y for a stream of fast bolts |
-| Pick | A guitar pick boomerang that flies out and comes back, hitting on the way |
-| Bombs | Lobbed bombs that blow up in a big blast |
+| Weapon | | Charged |
+| --- | --- | --- |
+| Grapes | The default lob | Three lobs that pierce |
+| Spread | Three lobs at once | Five piercing lobs |
+| Rapid | Hold Y for a stream of fast bolts | Three piercing bolts |
+| Pick | A guitar pick that flies out, curves back and returns to your hand, hitting on the way | Faster and harder hitting |
+| Bombs | Lobbed bombs that blow up in a big blast, two at a time | A bigger, longer blast |
 
 **Pause menu.** Start pauses: continue, go back to the last checkpoint, restart the
 chapter, or quit to the title.
@@ -52,21 +56,28 @@ chapter, or quit to the title.
 
 ## Chapters
 
-| | Chapter | Boss |
-| --- | --- | --- |
-| 1 | **FFA Convention**: where Jon and Wes met, flinging grapes off spoons | Champion Bull |
-| ★ | **Road Ride**: race the B-King against the RC51 to the diner. A win gives that rider +1 max heart | |
-| 2 | **Jam Sessions**: learning guitar at Wes's house | Feedback, the amp stack |
-| ★ | **The Range**: plates, bottles and clays. Hit 25 in 40 seconds for an extra life, and that shooter gets the double shot | |
-| 3 | **Bar Town Nights**: punk shows, cheap drinks and a long walk home | The Bouncer |
-| ★ | **Midnight Run**: the race home at night, with the traffic rearranged | |
-| 4 | **Chicago Fest**: a festival weekend in the windy city | Pigeon King |
-| ★ | **Dusk at the Range**: the range at sunset, with faster targets | |
-| 5 | **The Courthouse**: the night shift, mopping a castle of a courthouse | The Judge |
-| ★ | **Sunset Ride**: one last race down the coast, against a faster rival | |
-| 6 | **Golden Years**: old friends, still getting into trouble | Father Time |
+Every chapter plays a little differently: its own twist, enemies that move their own way,
+and a boss with its own attacks. Bosses get angrier at half health.
+
+| | Chapter | Twist | Enemies | Boss |
+| --- | --- | --- | --- | --- |
+| 1 | **FFA Convention**: where Jon and Wes met, flinging grapes off spoons | Giant spoons fling you up to a high road | Charging goats, tough pigs, hopping chickens | **Champion Bull** charges, stomps and, when angry, rampages wall to wall until it's dizzy |
+| ★ | **Road Ride**: race the B-King against the RC51 to the diner. A win gives that rider +1 max heart | | | |
+| 2 | **Jam Sessions**: learning guitar at Wes's house | The amps thump on the beat: jump on the thump to go higher | Pouncing cats, amps that fire sound waves (crouch!), weaving sour notes | **Feedback** sends high and low waves and spreads of notes |
+| ★ | **The Range**: plates, bottles and clays. Hit 25 in 40 seconds for an extra life, and that shooter gets the double shot | | | |
+| 3 | **Bar Town Nights**: punk shows, cheap drinks and a long walk home | Bottles thrown from the windows | Charging punks, frat bros lobbing bottles, darting rats | **The Bouncer** throws bottles, charges, and puts his arms up to block shots from the front |
+| ★ | **Midnight Run**: the race home at night, with the traffic rearranged | | | |
+| 4 | **Chicago Fest**: a festival weekend in the windy city | Wind gusts push you around | Security guards that block shots from the front, leaping hot dog mascots, pigeons dropping things | **Pigeon King** swoops, rains feathers and bounces around the arena |
+| ★ | **Dusk at the Range**: the range at sunset, with faster targets | | | |
+| 5 | **The Courthouse**: the night shift, mopping a castle of a courthouse | Freshly mopped, slippery floors | Floor buffers, suits of armour that block, swooping bats | **The Judge** calls ORDER with a sweep of falling gavels and teleports onto your head |
+| ★ | **Sunset Ride**: one last race down the coast, against a faster rival | | | |
+| 6 | **Golden Years**: old friends, still getting into trouble | Ride the pool rafts across the big pools | Golf carts, geese that chase you down, bouncing bingo balls | **Father Time** swings like a pendulum (crouch!) and fires rings of clocks |
+
+Guards and the Bouncer only block ordinary shots from the front: hit them from behind,
+stomp them, or use a bomb or a charged shot.
 
 ![Stage 1](art/screens/stage1.png) ![Champion Bull](art/screens/boss1.png)
+![Spoon catapult](art/screens/spoon.png) ![Pool raft](art/screens/raft.png) ![Chicago wind](art/screens/wind.png)
 ![Jam Sessions](art/screens/stage2.png) ![Bar Town Nights](art/screens/stage3.png)
 ![The Bouncer](art/screens/boss3.png) ![Pigeon King](art/screens/boss4.png)
 ![The Courthouse](art/screens/stage5.png) ![The Judge](art/screens/boss5.png)
@@ -104,6 +115,6 @@ Game code is in `src/`:
 
 - `main.c`: title, chapter cards, flow and ending.
 - `stage.c`: the platformer, weapons, props, checkpoints and the pause menu.
-- `fast.asm`: the sprite drawing helpers, in assembly because they run dozens of times a frame.
+- `fast.asm`: sprite drawing, shot movement and hit tests, in assembly because they run dozens of times a frame.
 - `boss.c`: the bosses.
 - `race.c` and `range.c`: the bonus rounds.

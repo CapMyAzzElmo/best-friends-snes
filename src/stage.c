@@ -14,7 +14,7 @@
 #include "game.h"
 
 extern char font_pic, font_pic_end, ui_pal;
-extern char jon_pic, jon_pal, wes_pic, wes_pal, items_pic, items_pal;
+extern char jon_pic, jon_pal, wes_pic, wes_pal, items_pic, items_pal, boom_pic;
 
 // small sheet frames (see tools/foes.py)
 #define SF_SHOT 0
@@ -23,6 +23,7 @@ extern char jon_pic, jon_pal, wes_pic, wes_pal, items_pic, items_pal;
 #define SF_C 6
 #define SF_C_ALT 8
 #define SF_C_HURT 10
+#define SF_BSHOT_ST 11    // the stage's thrown things (the boss's shots)
 
 // foe kinds and behaviours
 #define KIND_A 1
@@ -130,6 +131,21 @@ u8 fkind[MAX_FOES], ft[MAX_FOES], fdir[MAX_FOES], fstate[MAX_FOES], fhp[MAX_FOES
 u8 fframe[MAX_FOES];
 s16 fhop[MAX_FOES], fhopv[MAX_FOES];
 u8 nfoes, nact, kills;
+
+// stage gadgets: spoon catapults and pool rafts (see tools/stagekit.py)
+#define GAD_SPOON 1
+#define GAD_RAFT 2
+#define MAX_GADS 6
+u16 gx[MAX_GADS], gmin[MAX_GADS], gmax[MAX_GADS], gy[MAX_GADS];
+u8 gkind[MAX_GADS], gdir[MAX_GADS], gtime[MAX_GADS];
+u8 ngads;
+
+// each stage's own twist: 0 FFA spoons, 1 Jam bass thumps, 2 Bar Town
+// bottles from the windows, 3 Chicago wind, 4 Courthouse wet floors, 5 rafts
+u8 thump;        // counts down after a bass thump
+s8 wind;         // -1, 0 or 1
+u8 slick;        // freshly mopped floors
+extern u16 objfriction;
 u8 actlist[MAX_ACTIVE];
 u8 refoes;    // set to rebuild the active list next frame
 u8 ffirst;    // first foe that can be near the camera
@@ -274,6 +290,16 @@ u8 rangOut(void)
     return 0;
 }
 
+u8 bombsOut(void)
+{
+    Shot *p = shots;
+    u8 k, c = 0;
+    for (k = 0; k < MAX_SHOTS; k++, p++)
+        if (p->alive && p->kind >= SK_BOMB)
+            c++;
+    return c;
+}
+
 // the charged versions of each weapon
 void fireCharged(void)
 {
@@ -324,7 +350,8 @@ void fireWeapon(void)
         shotNew(SK_RANG, 104, 0);
         break;
     case W_BOMB:
-        shotNew(SK_BOMB, 46, -50);
+        if (bombsOut() < 2)    // two at a time
+            shotNew(SK_BOMB, 46, -50);
         break;
     default:
         shotNew(SK_LOB, 56, -26);
@@ -344,47 +371,49 @@ void explode(Shot *p)
     sfx(SFX_CRASH);
 }
 
+u16 shfound, sfr, sfpx, sfpy;
+void shotFind(u16 x0, u16 y0, u16 x1, u16 y1);    // fast.asm
+// scratch for shotsDraw and sparksDraw in fast.asm
+u16 dsidx, dsx, dsy, dscx, dscy, dsvx;
+u8 dsf, dsa, dskind, dspow, dslife, dstmp;
+void shotsDraw(void);
+void sparksDraw(void);
+void foesDraw(void);
+
 // returns the damage of a hero shot overlapping the box. Grapes and bolts
 // burst on contact, bombs blow up, the pick flies on through.
 u8 shotHits(u16 x0, u16 y0, u16 x1, u16 y1)
 {
     Shot *p;
-    u16 px, py, r;
-    u8 n, kind, dmg;
+    u16 px, py;
+    u8 kind, dmg;
     if (!nshots || (s16)x1 < shbx0 || (s16)x0 > shbx1 || (s16)y1 < shby0 || (s16)y0 > shby1)
         return 0;
-    p = shots;
-    for (n = 0; n < MAX_SHOTS; n++, p++)
+    shotFind(x0, y0, x1, y1);
+    if (shfound == 0xFFFF)
+        return 0;
+    p = (Shot *)((u8 *)shots + shfound);
+    kind = p->kind;
+    px = sfpx;
+    py = sfpy;
+    dmg = p->power ? 3 : 1;
+    if ((kind == SK_LOB || kind == SK_BOLT) && !p->power)
     {
-        if (!p->alive)
-            continue;
-        kind = p->kind;
-        px = p->x >> 4;
-        py = (u16)(p->y >> 4);
-        r = (kind == SK_BOOM) ? (p->power ? 34 : 22) : ((kind == SK_RANG) ? 7 : (p->power ? 6 : 3));
-        if (px + r > x0 && px < x1 + r && py + r > y0 && py < y1 + r)
-        {
-            dmg = p->power ? 3 : 1;
-            if ((kind == SK_LOB || kind == SK_BOLT) && !p->power)
-            {
-                p->alive = 0;
-                nshots--;
-                spawnSpark(px - 8, py - 8);
-                sfx(SFX_SPLAT);
-            }
-            else if (kind == SK_BOMB)
-            {
-                explode(p);
-                dmg = p->power ? 5 : 3;
-            }
-            else if (kind == SK_BOOM)
-                dmg = p->power ? 5 : 3;
-            else if (kind == SK_RANG)
-                dmg = p->power ? 4 : 2;
-            return hero == HERO_WES ? dmg + 1 : dmg;    // Wes hits harder
-        }
+        p->alive = 0;
+        nshots--;
+        spawnSpark(px - 8, py - 8);
+        sfx(SFX_SPLAT);
     }
-    return 0;
+    else if (kind == SK_BOMB)
+    {
+        explode(p);
+        dmg = p->power ? 5 : 3;
+    }
+    else if (kind == SK_BOOM)
+        dmg = p->power ? 5 : 3;
+    else if (kind == SK_RANG)
+        dmg = p->power ? 4 : 2;
+    return hero == HERO_WES ? dmg + 1 : dmg;    // Wes hits harder
 }
 
 void shotsUpdate(void)
@@ -450,6 +479,75 @@ void heroBounce(s16 vy)
     coyote = 0;
 }
 
+void gadgetsReset(void)
+{
+    u16 *t = a_gadtab;
+    u8 n;
+    ngads = a_ngads;
+    for (n = 0; n < ngads; n++)
+    {
+        gkind[n] = t[0];
+        gx[n] = t[1];
+        gmin[n] = t[1];
+        gy[n] = t[2];
+        gmax[n] = t[3];
+        gdir[n] = 1;
+        gtime[n] = 0;
+        t += 4;
+    }
+}
+
+// rafts drift and carry the hero; spoons fling the hero sky high
+void gadgetsHero(void)
+{
+    s16 hx, feet, top, gl;
+    u8 n;
+    hx = (s16)*heroox + 16;
+    feet = (s16)*herooy + 31;
+    for (n = 0; n < ngads; n++)
+    {
+        gl = (s16)gx[n];
+        top = (s16)gy[n];
+        if (gkind[n] == GAD_RAFT)
+        {
+            if (gdir[n])
+            {
+                gl++;
+                if (gl >= (s16)gmax[n])
+                    gdir[n] = 0;
+            }
+            else
+            {
+                gl--;
+                if (gl <= (s16)gmin[n])
+                    gdir[n] = 1;
+            }
+            gx[n] = gl;
+            if (*heroyv >= 0 && feet >= top - 3 && feet <= top + 10 && hx > gl && hx < gl + 32)
+            {
+                *herooy = top - 31;
+                *heroyv = 0;
+                *heroox += gdir[n] ? 1 : -1;
+                heroground = 1;
+            }
+        }
+        else if (gl < hx + 16 && gl + 48 > hx)
+        {
+            if (gtime[n])
+                gtime[n]--;
+            if (*heroyv >= 0 && herohp && feet >= top - 8 && feet <= top + 4 && hx > gl + 4 && hx < gl + 30)
+            {
+                *heroyv = (pad0 & KEY_B) ? -0x0780 : -0x0700;
+                jumpcut = 1;
+                coyote = 0;
+                heroground = 0;
+                gtime[n] = 24;
+                sfx(SFX_BOOST);
+            }
+        }
+    }
+}
+
 void heroupdate(u8 idx)
 {
     s16 speed;
@@ -474,8 +572,8 @@ void heroupdate(u8 idx)
     {
         if (herocrouch)
         {
-            // no walking while crouched, but you can turn to face
-            *heroxv -= *heroxv >> 2;
+            // no walking while crouched, but you can turn to face (and slide on a wet floor)
+            *heroxv -= slick ? (*heroxv >> 5) : (*heroxv >> 2);
             if (pad0 & KEY_LEFT)
                 heroflip = 1;
             else if (pad0 & KEY_RIGHT)
@@ -484,22 +582,22 @@ void heroupdate(u8 idx)
         else if (pad0 & KEY_LEFT)
         {
             heroflip = 1;
-            // turning around is snappier than speeding up
-            *heroxv -= (*heroxv > 0) ? hero_accel * 2 : hero_accel;
+            // turning around is snappier than speeding up, except on a wet floor
+            *heroxv -= (*heroxv > 0) ? (slick ? hero_accel >> 1 : hero_accel * 2) : hero_accel;
             if (*heroxv < -hero_maxspeed)
                 *heroxv = -hero_maxspeed;
         }
         else if (pad0 & KEY_RIGHT)
         {
             heroflip = 0;
-            *heroxv += (*heroxv < 0) ? hero_accel * 2 : hero_accel;
+            *heroxv += (*heroxv < 0) ? (slick ? hero_accel >> 1 : hero_accel * 2) : hero_accel;
             if (*heroxv > hero_maxspeed)
                 *heroxv = hero_maxspeed;
         }
         // coyote time: a few frames after running off a ledge you can still jump
         if (jumpbuf && coyote)
         {
-            *heroyv = -hero_jump;
+            *heroyv = thump ? -(hero_jump + 0x0100) : -hero_jump;    // jump on the beat to go higher
             jumpbuf = 0;
             coyote = 0;
             jumpcut = 0;
@@ -553,10 +651,31 @@ void heroupdate(u8 idx)
     if (*heroyv > 0)
         fallspeed = *heroyv;
 
+    // a bass thump bounces the hero off the floor
+    if (thump == 10 && heroground && herohp)
+    {
+        *heroyv = -0x0240;
+        jumpcut = 1;
+    }
+    // the wind pushes, harder in the air
+    if (wind && herohp)
+    {
+        speed = heroground ? 20 : 12;
+        if (wind > 0)
+        {
+            if (*heroxv < hero_maxspeed + 0x40)
+                *heroxv += speed;
+        }
+        else if (*heroxv > -hero_maxspeed - 0x40)
+            *heroxv -= speed;
+    }
+
     objCollidMap(idx);
     objUpdateXY(idx);
     herowasground = heroground;
     heroground = heroobj->tilestand != 0;
+    if (ngads)
+        gadgetsHero();
     if (heroground)
     {
         coyote = 6;
@@ -882,9 +1001,9 @@ void foesUpdate(void)
                     xl++;
                 else
                     xl--;
-                if (xl >= hi + 48)
+                if (xl >= hi + 16)
                     dir = 0;
-                if (xl <= lo - 48)
+                if (xl <= lo - 16)
                     dir = 1;
                 fr = SF_C + ((frame >> 3) & 1) + (hop < -8 ? 2 : 0);
                 break;
@@ -1376,7 +1495,6 @@ u8 itemFrame(u8 item)
 
 void drawWorld(void)
 {
-    Shot *sh;
     s16 sx, sy, x, y;
     u8 k, attr, n, f;
     nbig = BIG_FIRST;
@@ -1405,85 +1523,13 @@ void drawWorld(void)
     if (nbshots)
         bshotsDraw();
 
-    for (j = 0; j < nact; j++)
-    {
-        n = actlist[j];
-        if (fstate[n] == FOE_DEAD)
-            continue;
-        k = fkind[n];
-        sx = (s16)fx[n] - (s16)x_pos;
-        if (sx < -32 || sx > 256)
-            continue;
-        attr = fdir[n] ? 0 : 0x40;
-        if (fstate[n] == FOE_HURT)
-            attr ^= 0x40;    // still faces the hero while knocked back
-        if (k == KIND_C)
-            drawSmall(sx, (s16)fy[n] + fhop[n] - 16 - (s16)y_pos, fframe[n], ATTR_SPRITE(PAL_FOE_A) | attr, a_small);
-        else if (k == KIND_B)
-            drawBig(sx, (s16)fy[n] + fhop[n] - 32 - (s16)y_pos, 7 + fframe[n], ATTR_SPRITE(PAL_FOE_B) | attr, a_foes);
-        else
-            drawBig(sx, (s16)fy[n] + fhop[n] - 32 - (s16)y_pos, fframe[n], ATTR_SPRITE(PAL_FOE_A) | attr, a_foes);
-    }
+    foesDraw();
 
-    // shots
-    sh = shots;
-    for (n = nshots ? 0 : MAX_SHOTS; n < MAX_SHOTS; n++, sh++)
-    {
-        if (!sh->alive)
-            continue;
-        // screen position of the shot's centre
-        x = (s16)(sh->x >> 4) - (s16)x_pos;
-        y = (sh->y >> 4) - (s16)y_pos;
-        switch (sh->kind)
-        {
-        case SK_LOB:
-            drawSmall(x - 6, y - 6, SF_SHOT + ((frame >> 2) & 1), ATTR_SPRITE(PAL_FOE_A), a_small);
-            break;
-        case SK_BOLT:
-            drawSmall(x - 8, y - 8, IF_BOLT + ((frame >> 1) & 1), ATTR_SPRITE(PAL_ITEMS) | (sh->vx < 0 ? 0x40 : 0),
-                      &items_pic);
-            break;
-        case SK_RANG:
-            f = (frame >> 2) & 3;
-            drawSmall(x - 8, y - 8, IF_RANG + (f & 1), ATTR_SPRITE(PAL_ITEMS) | ((f & 2) ? 0xC0 : 0), &items_pic);
-            break;
-        case SK_BOMB:
-            drawSmall(x - 8, y - 8, IF_BOMB + ((frame >> 2) & 1), ATTR_SPRITE(PAL_ITEMS), &items_pic);
-            break;
-        default:
-            // the blast: one 16x16 quarter mirrored four ways
-            f = sh->life;
-            f = IF_BOOM + (f > 14 ? 0 : (f > 7 ? 1 : 2));
-            drawSmall(x - 16, y - 16, f, ATTR_SPRITE(PAL_ITEMS), &items_pic);
-            drawSmall(x, y - 16, f, ATTR_SPRITE(PAL_ITEMS) | 0x40, &items_pic);
-            drawSmall(x - 16, y, f, ATTR_SPRITE(PAL_ITEMS) | 0x80, &items_pic);
-            drawSmall(x, y, f, ATTR_SPRITE(PAL_ITEMS) | 0xC0, &items_pic);
-            if (sh->power)
-            {
-                // a charged blast is bigger: a second ring further out
-                drawSmall(x - 30, y - 8, f, ATTR_SPRITE(PAL_ITEMS), &items_pic);
-                drawSmall(x + 14, y - 8, f, ATTR_SPRITE(PAL_ITEMS) | 0x40, &items_pic);
-                drawSmall(x - 8, y - 30, f, ATTR_SPRITE(PAL_ITEMS), &items_pic);
-                drawSmall(x - 8, y + 14, f, ATTR_SPRITE(PAL_ITEMS) | 0xC0, &items_pic);
-            }
-            break;
-        }
-        // charged shots leave a trail of sparks
-        if (sh->power && (frame & 1) && sh->kind != SK_BOOM)
-            drawSmall(x - 8 - (sh->vx >> 3), y - 8, SF_SPARK + ((frame >> 1) & 1), ATTR_SPRITE(PAL_FOE_A) | OBJ_PRIO(3),
-                      a_small);
-    }
-    for (n = nsparks ? 0 : MAX_SPARKS; n < MAX_SPARKS; n++)
-    {
-        f = sptime[n];
-        if (!f)
-            continue;
-        drawSmall((s16)spx[n] - (s16)x_pos, (s16)spy[n] - (s16)y_pos, SF_SPARK + ((12 - f) >> 2),
-                  ATTR_SPRITE(PAL_FOE_A) | OBJ_PRIO(3), a_small);
-        sptime[n] = f - 1;
-        if (f == 1)
-            nsparks--;
-    }
+    // shots and sparks (fast.asm)
+    if (nshots)
+        shotsDraw();
+    if (nsparks)
+        sparksDraw();
 
     // pickups
     for (n = ndrops ? 0 : MAX_DROPS; n < MAX_DROPS; n++)
@@ -1503,6 +1549,38 @@ void drawWorld(void)
         k = hvis[n];
         drawSmall((s16)a_hearttab[k * 2] - (s16)x_pos, (s16)a_hearttab[k * 2 + 1] - (s16)y_pos + ((frame >> 4) & 1),
                   SF_HEART, ATTR_SPRITE(PAL_FOE_A), a_small);
+    }
+
+    // spoons and rafts
+    for (n = 0; n < ngads; n++)
+    {
+        x = (s16)gx[n] - (s16)x_pos;
+        if (x < -32 || x > 256)
+            continue;
+        y = (s16)gy[n] - (s16)y_pos;
+        if (gkind[n] == GAD_RAFT)
+        {
+            drawSmall(x, y - 6, IF_RAFT, ATTR_SPRITE(PAL_ITEMS), &items_pic);
+            drawSmall(x + 16, y - 6, IF_RAFT, ATTR_SPRITE(PAL_ITEMS) | 0x40, &items_pic);
+        }
+        else
+        {
+            f = gtime[n] ? IF_SPOON + 2 : IF_SPOON;
+            drawSmall(x, y - 16, f, ATTR_SPRITE(PAL_ITEMS), &items_pic);
+            drawSmall(x + 16, y - 16, f + 1, ATTR_SPRITE(PAL_ITEMS), &items_pic);
+        }
+    }
+    // wind: feathers and litter blowing past
+    if (wind)
+    {
+        for (n = 0; n < 2; n++)
+        {
+            x = (s16)((frame * 5 + n * 131) & 255);
+            if (wind < 0)
+                x = 255 - x;
+            drawSmall(x - 8, 60 + n * 64 + bobtab[(frame + n * 4) & 15], SF_BSHOT_ST + (n & 1),
+                      ATTR_SPRITE(PAL_BOSS) | (wind < 0 ? 0x40 : 0), a_small);
+        }
     }
 
     // props and checkpoint flags
@@ -1669,6 +1747,12 @@ void stageStart(u8 newstage)
     foesReset();
     bossInit();
     objInitEngine();
+    slick = (stage == 4);
+    if (slick)
+        objfriction = 3;
+    thump = 0;
+    wind = 0;
+    gadgetsReset();
     objInitFunctions(0, &heroinit, &heroupdate, NULL);
     objLoadObjects(a_hero);
     mapLoad(a_map, a_tiledef, a_tileprop);
@@ -1706,6 +1790,54 @@ void stageStart(u8 newstage)
     setScreenOn();
 }
 
+// each stage's twist, once a frame
+void stageTwist(void)
+{
+    s16 x;
+    if (thump)
+        thump--;
+    if (bossactive || bossdead || herohp == 0)
+    {
+        wind = 0;
+        return;
+    }
+    switch (stage)
+    {
+    case 1:
+        // the amps thump on the beat
+        if ((frame & 127) == 0)
+        {
+            thump = 10;
+            sfx(SFX_STOMP);
+        }
+        break;
+    case 2:
+        // somebody up in the windows throws a bottle where the hero is headed
+        if ((frame & 255) == 64 || (frame & 255) == 192 && herox > 1400)    // more often further in
+        {
+            x = (s16)herox + 8 + (*heroxv >> 2) + (s16)(rnd() & 47) - 24;
+            bossShot(x, -16, 0, 0, 1);
+        }
+        break;
+    case 3:
+        // gusts off the lake, a different way each time
+        x = frame & 511;
+        if (x == 220)
+        {
+            wind = (frame & 512) ? -1 : 1;
+            sfx(SFX_BOOST);
+        }
+        else if (x == 460)
+            wind = 0;
+        break;
+    case 4:
+        // sliding fast on the wet floor kicks up spray
+        if (slick && (frame & 7) == 0 && heroground && (*heroxv > 0x0120 || *heroxv < -0x0120))
+            spawnSpark(herox + 8, heroy + 18);
+        break;
+    }
+}
+
 void stageClearText(void)
 {
     u16 bonus = (u16)herohp * 50;
@@ -1737,6 +1869,7 @@ u8 stageLoop(void)
         else
             heartsUpdate();
         checkpointsUpdate();
+        stageTwist();
         if (bossactive)
             bossUpdate();
         if (nbshots)
@@ -1812,7 +1945,7 @@ u8 stageLoop(void)
         drawWorld();
         endFrame();
         mapVblank();
-        bgSetScroll(1, x_pos >> 1, 0);
+        bgSetScroll(1, x_pos >> 1, (thump & 2) ? 2 : 0);    // the backdrop shakes on a thump
         hudFlush();
         if (first)
         {

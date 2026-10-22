@@ -34,6 +34,7 @@ PAL_A, PAL_B, PAL_C, PAL_D = 1, 2, 5, 6        # playfield x2, backdrop x2
 
 # object kinds (match src/game.h)
 OBJ_START, FOE_A, FOE_B, FOE_C, OBJ_HEART = 0, 1, 2, 3, 5
+GAD_SPOON, GAD_RAFT = 1, 2
 
 LEVEL_H_MT = 14
 ARENA_MT = 16                                    # boss arena: the last screen
@@ -64,6 +65,7 @@ class Level:
         self.w = width_mt
         self.cells = {}           # (mx, my) -> (canvas16, palette, attrs)
         self.objects = []         # (x, y, kind, minx, maxx)
+        self.gadgets = []         # (kind, x, feet y, max x)
 
     def put(self, mx, my, mt, merge=True):
         """Place a metatile. Over an existing cell with the same palette the
@@ -126,6 +128,14 @@ class Level:
 
     def foe(self, kind, mx, lo, hi, row=12):
         self.objects.append((mx * 16, row * 16, kind, lo * 16, hi * 16))
+
+    def spoon(self, mx, row=12):
+        """A giant spoon catapult on the floor: step on it to be flung up high."""
+        self.gadgets.append((GAD_SPOON, mx * 16, row * 16, 0))
+
+    def raft(self, mx0, mx1, top=190):
+        """A pool raft drifting back and forth between mx0 and mx1 (metatiles)."""
+        self.gadgets.append((GAD_RAFT, mx0 * 16, top, mx1 * 16 - 32))
 
     def heart(self, mx, row):
         self.objects.append((mx * 16, row * 16, OBJ_HEART, 0, 0))
@@ -271,6 +281,13 @@ def export_objects(n, lv, coll):
         f.write(f"const u16 st{n}_proptab[] = {{\n")
         for p in props:
             f.write(f"    {p[0]}, {p[1]}, {p[2]},\n")
+        f.write("    0};\n")
+        assert len(lv.gadgets) <= 6
+        f.write(f"#define ST{n}_NGADS {len(lv.gadgets)}\n")
+        f.write("// spoon catapults and rafts: kind, x, feet y, max x\n")
+        f.write(f"const u16 st{n}_gadtab[] = {{\n")
+        for g in lv.gadgets:
+            f.write(f"    {g[0]}, {g[1]}, {g[2]}, {g[3]},\n")
         f.write("    0};\n")
         f.write("// checkpoint flags: x, feet y\n")
         f.write(f"const u16 st{n}_cptab[] = {{\n")

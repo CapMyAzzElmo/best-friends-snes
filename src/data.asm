@@ -398,6 +398,9 @@ items_pic:
 items_pal:
 .incbin "build/items.pal"
 
+boom_pic:
+.incbin "build/boom.pic"
+
 .ends
 
 ; Heroes --------------------------------------------------------------

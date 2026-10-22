@@ -66,6 +66,8 @@
 #define IF_BOOM 16
 #define IF_PROP 19         // + stage * 2 (+1 cracked)
 #define IF_SPARKLE 31
+#define IF_SPOON 33        // 33-34 at rest, 35-36 flung
+#define IF_RAFT 37
 
 // pickups hidden in breakable props (match tools/stagekit.py)
 #define ITEM_STAR 0
@@ -122,8 +124,8 @@ u8 slen(char *s);
 extern char *a_map, *a_bg1pic, *a_tiledef, *a_tileprop, *a_bgpal, *a_hero;
 extern char *a_bg2pic, *a_bg2map, *a_foes, *a_small, *a_boss, *a_spra, *a_sprb, *a_bosspal;
 extern u16 a_bg1size, a_bg2size;
-extern u16 *a_foetab, *a_hearttab, *a_proptab, *a_cptab;
-extern u16 a_nfoes, a_nhearts, a_nprops, a_arenax;
+extern u16 *a_foetab, *a_hearttab, *a_proptab, *a_cptab, *a_gadtab;
+extern u16 a_nfoes, a_nhearts, a_nprops, a_arenax, a_ngads;
 void loadStageAssets(u8 s);
 
 // ---------------------------------------------------------------- stage.c

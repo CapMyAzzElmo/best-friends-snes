@@ -323,7 +323,10 @@ def build_level():
     crates(42, 10)
     crates(42, 8)
     enemy(OBJ_CHICKEN, 45, 44, 47)
-    # C: water troughs
+    # C: water troughs, or a spoon to fling you up to the high road over them
+    lv.spoon(45)
+    planks(47, 4, 16)
+    heart(55, 3)
     troughs(48, 3)
     bales(51, 11, 1)
     troughs(53, 3)
@@ -339,7 +342,10 @@ def build_level():
     fences(76, 5)
     enemy(OBJ_PIG, 82, 74, 94)
     enemy(OBJ_CHICKEN, 89, 87, 92, row=8)
-    # E: the bleacher climb
+    # E: the bleacher climb, and a spoon up to the rafters
+    lv.spoon(94)
+    planks(97, 4, 5)
+    heart(99, 3)
     planks(97, 10, 2)
     planks(100, 8, 2)
     planks(103, 6, 3)
@@ -348,7 +354,10 @@ def build_level():
     planks(110, 10, 2)
     enemy(OBJ_GOAT, 103, 98, 113)
     enemy(OBJ_CHICKEN, 116, 113, 120)
-    # F: the judging tables
+    # F: the judging tables, with the prize ribbons strung up high
+    lv.spoon(117)
+    planks(119, 4, 5)
+    heart(121, 3)
     tables(121, 10, 4)
     enemy(OBJ_CHICKEN, 127, 125, 131)
     bales(134, 11, 2)

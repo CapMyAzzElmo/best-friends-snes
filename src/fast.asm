@@ -615,3 +615,584 @@ _buNext:
     rtl
 
 .ends
+
+; void shotFind(u16 x0, u16 y0, u16 x1, u16 y1)
+; Finds the first live hero shot whose hit radius reaches the box, for
+; shotHits in stage.c: shfound = its byte offset in shots[], or $FFFF.
+; Stack on entry (A16, X16): 1-3 return, 4 x0, 6 y0, 8 x1, 10 y1.
+.section ".fastfind_text" superfree
+
+shotFind:
+    php
+    rep #$30
+    ldx.w #0
+_sfLoop:
+    sep #$20
+    lda.w shots+8,x
+    bne +
+    jmp _sfNext
++   lda.w shots+10,x              ; radius: blast 22 (34 charged), pick 7, others 3 (6 charged)
+    cmp.b #4
+    bne _sfNotBoom
+    lda.w shots+12,x
+    beq +
+    lda.b #34
+    bra _sfR
++   lda.b #22
+    bra _sfR
+_sfNotBoom:
+    cmp.b #2
+    bne +
+    lda.b #7
+    bra _sfR
++   lda.w shots+12,x
+    beq +
+    lda.b #6
+    bra _sfR
++   lda.b #3
+_sfR:
+    rep #$20
+    and.w #$00ff
+    sta.w sfr
+    lda.w shots+0,x
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    sta.w sfpx
+    clc
+    adc.w sfr                     ; px + r > x0
+    cmp 5,s
+    beq _sfNext
+    bcc _sfNext
+    lda 9,s                       ; px < x1 + r
+    clc
+    adc.w sfr
+    cmp.w sfpx
+    beq _sfNext
+    bcc _sfNext
+    lda.w shots+2,x
+    cmp.w #$8000
+    ror a
+    cmp.w #$8000
+    ror a
+    cmp.w #$8000
+    ror a
+    cmp.w #$8000
+    ror a
+    sta.w sfpy
+    clc
+    adc.w sfr                     ; py + r > y0
+    cmp 7,s
+    beq _sfNext
+    bcc _sfNext
+    lda 11,s                      ; py < y1 + r
+    clc
+    adc.w sfr
+    cmp.w sfpy
+    beq _sfNext
+    bcc _sfNext
+    stx.w shfound
+    plp
+    rtl
+_sfNext:
+    rep #$20
+    txa
+    clc
+    adc.w #SHOT_SIZE
+    tax
+    cpx.w #SHOT_END
+    bcs +
+    jmp _sfLoop
++   lda.w #$ffff
+    sta.w shfound
+    plp
+    rtl
+
+.ends
+
+; void shotsDraw(void), void sparksDraw(void)
+; The hero's shots and the sparks, drawn straight from their arrays. They
+; call drawSmall/drawBig like the C code does, through _ds* below: x in dsx,
+; y in dsy, frame in dsf, attributes in dsa.
+.section ".fastshotdraw_text" superfree
+
+; attributes: OBJ_PRIO(2) | palette << 1
+.define A_FOE $24               ; palette 2 (foes A/C, shots, sparks)
+.define A_ITEMS $26             ; palette 3 (items)
+.define A_SPARK $34             ; palette 2, in front
+
+_dsSmall:                       ; from the stage's small sheet (a_small)
+    rep #$20
+    lda.w a_small+2
+    pha
+    lda.w a_small
+    pha
+    bra _dsPush
+_dsItems:                       ; from the items sheet
+    rep #$20
+    pea.w :items_pic
+    pea.w items_pic
+_dsPush:
+    sep #$20
+    lda.w dsa
+    pha
+    lda.w dsf
+    pha
+    rep #$20
+    lda.w dsy
+    pha
+    lda.w dsx
+    pha
+    jsl drawSmall
+    rep #$20
+    tsc
+    clc
+    adc.w #10
+    tcs
+    rts
+
+_dsBoom:                        ; the 32x32 blast
+    rep #$20
+    pea.w :boom_pic
+    pea.w boom_pic
+    sep #$20
+    lda.w dsa
+    pha
+    lda.w dsf
+    pha
+    rep #$20
+    lda.w dsy
+    pha
+    lda.w dsx
+    pha
+    jsl drawBig
+    rep #$20
+    tsc
+    clc
+    adc.w #10
+    tcs
+    rts
+
+shotsDraw:
+    php
+    rep #$30
+    stz.w dsidx
+_sdLoop:
+    ldx.w dsidx
+    sep #$20
+    lda.w shots+8,x
+    bne +
+    jmp _sdNext
++   lda.w shots+9,x
+    sta.w dslife
+    lda.w shots+10,x
+    sta.w dskind
+    lda.w shots+12,x
+    sta.w dspow
+    rep #$20
+    lda.w shots+0,x             ; the shot's centre on screen
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    sec
+    sbc.w x_pos
+    sta.w dscx
+    sec
+    sbc.w #8
+    sta.w dsx
+    lda.w shots+2,x
+    cmp.w #$8000
+    ror a
+    cmp.w #$8000
+    ror a
+    cmp.w #$8000
+    ror a
+    cmp.w #$8000
+    ror a
+    sec
+    sbc.w y_pos
+    sta.w dscy
+    sec
+    sbc.w #8
+    sta.w dsy
+    lda.w shots+4,x
+    sta.w dsvx
+    sep #$20
+    lda.w dskind
+    beq _sdLob
+    cmp.b #1
+    beq _sdBolt
+    cmp.b #2
+    beq _sdRang
+    cmp.b #3
+    beq _sdBomb
+    jmp _sdBoom
+
+_sdLob:                         ; grapes, from the stage sheet
+    rep #$20
+    inc.w dsx
+    inc.w dsx
+    inc.w dsy
+    inc.w dsy
+    lda.w frame
+    lsr a
+    lsr a
+    and.w #1
+    sep #$20
+    sta.w dsf
+    lda.b #A_FOE
+    sta.w dsa
+    jsr _dsSmall
+    jmp _sdTrail
+
+_sdBolt:
+    rep #$20
+    lda.w frame
+    lsr a
+    and.w #1
+    clc
+    adc.w #10                   ; IF_BOLT
+    sep #$20
+    sta.w dsf
+    lda.b #A_ITEMS
+    bit.w dsvx+1
+    bpl +
+    ora.b #$40
++   sta.w dsa
+    jsr _dsItems
+    jmp _sdTrail
+
+_sdRang:
+    rep #$20
+    lda.w frame
+    lsr a
+    lsr a
+    and.w #3
+    sep #$20
+    sta.w dstmp
+    and.b #1
+    clc
+    adc.b #12                   ; IF_RANG
+    sta.w dsf
+    lda.b #A_ITEMS
+    sta.w dsa
+    lda.w dstmp
+    and.b #2
+    beq +
+    lda.b #A_ITEMS|$C0
+    sta.w dsa
++   jsr _dsItems
+    jmp _sdTrail
+
+_sdBomb:
+    rep #$20
+    lda.w frame
+    lsr a
+    lsr a
+    and.w #1
+    clc
+    adc.w #14                   ; IF_BOMB
+    sep #$20
+    sta.w dsf
+    lda.b #A_ITEMS
+    sta.w dsa
+    jsr _dsItems
+    jmp _sdTrail
+
+_sdBoom:                        ; one 32x32 sprite, plus a ring of quarters when charged
+    sep #$20
+    lda.w dslife
+    cmp.b #15
+    bcc +
+    lda.b #0
+    bra ++
++   cmp.b #8
+    lda.b #1
+    bcs ++
+    lda.b #2
+++  sta.w dsf
+    lda.b #A_ITEMS
+    sta.w dsa
+    rep #$20
+    lda.w dscx
+    sec
+    sbc.w #16
+    sta.w dsx
+    lda.w dscy
+    sec
+    sbc.w #16
+    sta.w dsy
+    jsr _dsBoom
+    sep #$20
+    lda.w dspow
+    bne +
+    jmp _sdNext
++   lda.w dsf
+    clc
+    adc.b #16                   ; IF_BOOM
+    sta.w dsf
+    rep #$20
+    lda.w dscx                  ; left
+    sec
+    sbc.w #30
+    sta.w dsx
+    lda.w dscy
+    sec
+    sbc.w #8
+    sta.w dsy
+    jsr _dsItems
+    rep #$20
+    lda.w dscx                  ; right
+    clc
+    adc.w #14
+    sta.w dsx
+    sep #$20
+    lda.b #A_ITEMS|$40
+    sta.w dsa
+    jsr _dsItems
+    rep #$20
+    lda.w dscx                  ; top
+    sec
+    sbc.w #8
+    sta.w dsx
+    lda.w dscy
+    sec
+    sbc.w #30
+    sta.w dsy
+    sep #$20
+    lda.b #A_ITEMS
+    sta.w dsa
+    jsr _dsItems
+    rep #$20
+    lda.w dscy                  ; bottom
+    clc
+    adc.w #14
+    sta.w dsy
+    sep #$20
+    lda.b #A_ITEMS|$C0
+    sta.w dsa
+    jsr _dsItems
+    jmp _sdNext
+
+_sdTrail:                       ; charged shots leave sparks behind
+    sep #$20
+    lda.w dspow
+    beq _sdNext
+    lda.w frame
+    and.b #1
+    beq _sdNext
+    rep #$20
+    lda.w dsvx                  ; x = cx - 8 - (vx >> 3)
+    cmp.w #$8000
+    ror a
+    cmp.w #$8000
+    ror a
+    cmp.w #$8000
+    ror a
+    eor.w #$ffff
+    sec
+    adc.w dscx
+    sec
+    sbc.w #8
+    sta.w dsx
+    lda.w dscy
+    sec
+    sbc.w #8
+    sta.w dsy
+    lda.w frame
+    lsr a
+    and.w #1
+    clc
+    adc.w #2                    ; SF_SPARK
+    sep #$20
+    sta.w dsf
+    lda.b #A_SPARK
+    sta.w dsa
+    jsr _dsSmall
+
+_sdNext:
+    rep #$20
+    lda.w dsidx
+    clc
+    adc.w #SHOT_SIZE
+    sta.w dsidx
+    cmp.w #SHOT_END
+    bcs +
+    jmp _sdLoop
++   plp
+    rtl
+
+sparksDraw:
+    php
+    rep #$30
+    stz.w dsidx
+_spLoop:
+    ldx.w dsidx
+    sep #$20
+    lda.w sptime,x
+    beq _spNext
+    sta.w dstmp
+    dec a
+    sta.w sptime,x
+    bne +
+    dec.w nsparks
++   lda.b #12                   ; SF_SPARK + (12 - time) / 4
+    sec
+    sbc.w dstmp
+    lsr a
+    lsr a
+    clc
+    adc.b #2
+    sta.w dsf
+    lda.b #A_SPARK
+    sta.w dsa
+    rep #$20
+    txa
+    asl a
+    tax
+    lda.w spx,x
+    sec
+    sbc.w x_pos
+    sta.w dsx
+    lda.w spy,x
+    sec
+    sbc.w y_pos
+    sta.w dsy
+    jsr _dsSmall
+_spNext:
+    rep #$20
+    inc.w dsidx
+    lda.w dsidx
+    cmp.w #6                    ; MAX_SPARKS
+    bcc _spLoop
+    plp
+    rtl
+
+
+; void foesDraw(void): the active foes (stage.c's actlist), A and B kinds as
+; 32x32 sprites from a_foes, C kinds as 16x16 from a_small
+_dsFoeBig:
+    rep #$20
+    lda.w a_foes+2
+    pha
+    lda.w a_foes
+    pha
+    sep #$20
+    lda.w dsa
+    pha
+    lda.w dsf
+    pha
+    rep #$20
+    lda.w dsy
+    pha
+    lda.w dsx
+    pha
+    jsl drawBig
+    rep #$20
+    tsc
+    clc
+    adc.w #10
+    tcs
+    rts
+
+foesDraw:
+    php
+    rep #$30
+    stz.w dsidx
+_fdLoop:
+    sep #$20
+    lda.w dsidx
+    cmp.w nact
+    bcc +
+    plp
+    rtl
++   rep #$20
+    lda.w dsidx
+    and.w #$00ff
+    tax
+    lda.w actlist,x
+    and.w #$00ff
+    tax                         ; X: foe number
+    sep #$20
+    lda.w fstate,x
+    cmp.b #3                    ; FOE_DEAD
+    bne +
+    jmp _fdNext
++   sta.w dstmp
+    lda.w fkind,x
+    sta.w dskind
+    lda.w fframe,x
+    sta.w dsf
+    lda.w fdir,x                ; facing right unless fdir is 0; flipped back while hurt
+    beq +
+    lda.b #0
+    bra ++
++   lda.b #$40
+++  sta.w dsa
+    rep #$20
+    txa
+    asl a
+    tax                         ; X: word index
+    lda.w fx,x
+    sec
+    sbc.w x_pos
+    sta.w dsx
+    clc
+    adc.w #32
+    cmp.w #289                  ; -32 <= sx <= 256
+    bcc +
+    jmp _fdNext
++   lda.w fy,x
+    clc
+    adc.w fhop,x
+    sec
+    sbc.w y_pos
+    sta.w dsy
+    sep #$20
+    lda.w dstmp
+    cmp.b #2
+    bne +
+    lda.w dsa
+    eor.b #$40
+    sta.w dsa
++   lda.w dskind
+    cmp.b #3                    ; KIND_C
+    bne _fdBig
+    lda.w dsa
+    ora.b #$24                  ; palette 2
+    sta.w dsa
+    rep #$20
+    lda.w dsy
+    sec
+    sbc.w #16
+    sta.w dsy
+    jsr _dsSmall
+    jmp _fdNext
+_fdBig:
+    cmp.b #2                    ; KIND_B: palette 5, frames from 7
+    bne +
+    lda.w dsa
+    ora.b #$2A
+    sta.w dsa
+    lda.w dsf
+    clc
+    adc.b #7
+    sta.w dsf
+    bra ++
++   lda.w dsa
+    ora.b #$24
+    sta.w dsa
+++  rep #$20
+    lda.w dsy
+    sec
+    sbc.w #32
+    sta.w dsy
+    jsr _dsFoeBig
+_fdNext:
+    rep #$20
+    inc.w dsidx
+    jmp _fdLoop
+
+.ends

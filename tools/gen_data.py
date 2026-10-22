@@ -45,7 +45,8 @@ def main():
                                 ("title_bg1_map", "title_bg1.map", False), ("font_pic", "font.pic", True),
                                 ("ui_pal", "ui.pal", False)]))
     parts.append("; Pickups, props and weapon shots " + "-" * 37)
-    parts.append(section("items", [("items_pic", "items.pic", False), ("items_pal", "items.pal", False)]))
+    parts.append(section("items", [("items_pic", "items.pic", False), ("items_pal", "items.pal", False),
+                                   ("boom_pic", "boom.pic", False)]))
     parts.append("; Heroes " + "-" * 62)
     parts.append(section("jon", [("jon_pic", "jon.pic", False), ("jon_pal", "jon.pal", False),
                                  ("jon_dim_pal", "jon_dim.pal", False)]))
@@ -78,8 +79,8 @@ def main():
          "char *a_map, *a_bg1pic, *a_tiledef, *a_tileprop, *a_bgpal, *a_hero;",
          "char *a_bg2pic, *a_bg2map, *a_foes, *a_small, *a_boss, *a_spra, *a_sprb, *a_bosspal;",
          "u16 a_bg1size, a_bg2size;",
-         "u16 *a_foetab, *a_hearttab, *a_proptab, *a_cptab;",
-         "u16 a_nfoes, a_nhearts, a_nprops, a_arenax;", ""]
+         "u16 *a_foetab, *a_hearttab, *a_proptab, *a_cptab, *a_gadtab;",
+         "u16 a_nfoes, a_nhearts, a_nprops, a_arenax, a_ngads;", ""]
     for n in range(1, NSTAGES + 1):
         c.append("extern char " + ", ".join(f"st{n}_{k}" for k in names) + ";")
     c.append("")
@@ -116,6 +117,8 @@ def main():
         c.append(f"        a_proptab = (u16 *){p}_proptab;")
         c.append(f"        a_cptab = (u16 *){p}_cptab;")
         c.append(f"        a_nprops = ST{n}_NPROPS;")
+        c.append(f"        a_gadtab = (u16 *){p}_gadtab;")
+        c.append(f"        a_ngads = ST{n}_NGADS;")
         c.append(f"        a_arenax = ST{n}_ARENA_X;")
         c.append("        break;")
     c.append("    }")
