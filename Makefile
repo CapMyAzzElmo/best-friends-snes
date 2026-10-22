@@ -10,7 +10,7 @@ export ROMTITLE := COMRADES
 # 1MB LoROM
 export ROMSIZE := 0A
 export ROMBANKS := 32
-export FASTROM := 1
+export FASTROM := 0    # FastROM off: plain SlowROM runs everywhere, and the game no longer needs the speed
 
 # music and sound effects (SNESMOD); the effects module must come first
 SMCONVFLAGS := -s -o build/soundbank -V -b 5 -f
