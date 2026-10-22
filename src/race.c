@@ -250,9 +250,15 @@ u8 raceRun(u8 variant)
             obfirst++;
         for (i = obfirst; i < NOBS; i++)
         {
-            if (ob_x[i] > pdist + 320 && ob_x[i] > rdist + 160)
-                break;
             t = ob_type[i];
+            // the course is sorted by x, but cars drive on ahead of their
+            // place in it, so only a parked hazard ends the search
+            if (ob_x[i] > pdist + 320 && ob_x[i] > rdist + 160)
+            {
+                if (t == O_CAR)
+                    continue;
+                break;
+            }
             if (t == O_CAR && ob_x[i] < RACE_LEN + 400)
                 ob_x[i] += 2;                           // slow traffic still moves
             oy = ob_y[i];
@@ -337,11 +343,15 @@ u8 raceRun(u8 variant)
         for (i = obfirst; i < NOBS; i++)
         {
             sx = PLAYER_SX + (s16)(ob_x[i] - pdist);
+            t = ob_type[i];
             if (sx > 256)
+            {
+                if (t == O_CAR)
+                    continue;
                 break;
+            }
             if (sx < -64)
                 continue;
-            t = ob_type[i];
             oy = ob_y[i];
             if (t == O_CONE)
                 drawSmall(sx, oy - 16, ob_hit[i] ? 1 : 0, ATTR_SPRITE(PAL_OBJ), &race_small);

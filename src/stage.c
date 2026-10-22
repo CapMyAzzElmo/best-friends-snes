@@ -28,14 +28,23 @@ extern char jon_pic, jon_pal, wes_pic, wes_pal, items_pic, items_pal;
 #define KIND_A 1
 #define KIND_B 2
 #define KIND_C 3
-#define B_WALK 0
-#define B_CHARGE 1
-#define B_HOP 2
-#define B_FLY 3
+#define B_WALK 0      // patrols
+#define B_CHARGE 1    // lowers its head and rushes a hero in front of it
+#define B_HOP 2       // hops in place
+#define B_FLY 3       // bobs in the air and swoops down
+#define B_SHOOT 4     // stops and throws at the hero
+#define B_POUNCE 5    // crouches and leaps at the hero
+#define B_ZIG 6       // weaves through the air after the hero
+#define B_SCURRY 7    // darts fast, stops, darts again
+#define B_GUARD 8     // faces the hero and blocks shots from the front
+#define B_DROP 9      // flies high and drops things on the hero
+#define B_BOUNCE 10   // bounces non-stop, steering at the hero
+#define B_CHASE 11    // chases the hero down
 
 #define MAX_FOES 24
 #define MAX_ACTIVE 10
-#define MAX_SHOTS 6
+#define MAX_SHOTS 8
+#define CHARGE_FULL 40    // frames of holding Y for a charged shot
 #define MAX_SPARKS 6
 #define MAX_PROPS 16
 #define MAX_DROPS 4
@@ -51,12 +60,12 @@ extern char jon_pic, jon_pal, wes_pic, wes_pal, items_pic, items_pal;
 
 // per stage, per kind (A, B, C): behaviour, hit points, move mask, charge speed
 const u8 foe_beh[18] = {
-    B_CHARGE, B_CHARGE, B_HOP,      // goat, pig, chicken
-    B_CHARGE, B_WALK, B_FLY,        // cat, walking amp, sour note
-    B_CHARGE, B_WALK, B_HOP,        // punk, frat bro, rat
-    B_CHARGE, B_WALK, B_FLY,        // security, hot dog mascot, pigeon
-    B_CHARGE, B_WALK, B_FLY,        // floor buffer, suit of armour, bat
-    B_CHARGE, B_CHARGE, B_HOP};     // golf cart, goose, bingo ball
+    B_CHARGE, B_WALK, B_HOP,        // goat, pig, chicken
+    B_POUNCE, B_SHOOT, B_ZIG,       // cat, walking amp (sound waves), sour note
+    B_CHARGE, B_SHOOT, B_SCURRY,    // punk, frat bro (bottles), rat
+    B_GUARD, B_POUNCE, B_DROP,      // security, hot dog mascot, pigeon
+    B_CHARGE, B_GUARD, B_FLY,       // floor buffer, suit of armour, bat
+    B_CHARGE, B_CHASE, B_BOUNCE};   // golf cart, goose, bingo ball
 const u8 foe_hp[18] = {2, 4, 1, 2, 4, 1, 2, 3, 1, 3, 3, 1, 3, 4, 1, 3, 2, 1};
 // walk speed: the foe steps on frames where (frame & mask) == 0
 const u8 foe_mask[18] = {1, 3, 0, 0, 3, 0, 1, 1, 0, 1, 3, 0, 0, 3, 0, 0, 1, 0};
@@ -88,7 +97,8 @@ u8 coyote, jumpbuf, jumpcut, landtimer, stompchain, firehold;
 u16 heroanim, runphase;
 s16 hero_accel, hero_maxspeed, hero_jump, fallspeed;
 s16 look;
-u8 heroyofs;
+u8 heroyofs, herotop;    // top of the hitbox below heroy: for the map, and for foes (lower when crouching)
+u8 herocrouch, herocharge, chargeshot;
 u8 stagedone;
 u8 checkpoint;            // 0 stage start, 1-2 flags, 3 the arena gate
 u8 lasthp, lastlives, lastweapon, cptimer;
@@ -101,6 +111,7 @@ typedef struct
     u16 x;
     s16 y, vx, vy;
     u8 alive, life, kind, event;
+    u8 power, spare;    // power: a charged shot (pierces, hits harder)
 } Shot;
 Shot shots[MAX_SHOTS];
 u8 nshots;
@@ -121,6 +132,7 @@ s16 fhop[MAX_FOES], fhopv[MAX_FOES];
 u8 nfoes, nact, kills;
 u8 actlist[MAX_ACTIVE];
 u8 refoes;    // set to rebuild the active list next frame
+u8 ffirst;    // first foe that can be near the camera
 #define FOE_WALK 0
 #define FOE_CHARGE 1
 #define FOE_HURT 2
@@ -232,7 +244,8 @@ void shotNew(u8 kind, s16 vx, s16 vy)
         {
             p->alive = 1;
             p->kind = kind;
-            p->life = kind == SK_RANG ? 90 : 70;
+            p->power = chargeshot;
+            p->life = kind == SK_RANG ? 100 : 70;
             if (heroflip)
             {
                 p->x = (herox + 6) << 4;
@@ -243,7 +256,7 @@ void shotNew(u8 kind, s16 vx, s16 vy)
             if (kind != SK_RANG)
                 vx += (*heroxv) >> 5;
             p->vx = vx;
-            p->y = (heroy + 12) << 4;
+            p->y = (heroy + (herocrouch ? 21 : 12)) << 4;
             p->vy = vy;
             nshots++;
             return;
@@ -261,6 +274,40 @@ u8 rangOut(void)
     return 0;
 }
 
+// the charged versions of each weapon
+void fireCharged(void)
+{
+    chargeshot = 1;
+    switch (weapon)
+    {
+    case W_SPREAD:
+        shotNew(SK_LOB, 50, -56);
+        shotNew(SK_LOB, 56, -40);
+        shotNew(SK_LOB, 60, -24);
+        shotNew(SK_LOB, 60, -8);
+        shotNew(SK_LOB, 56, 6);
+        break;
+    case W_RAPID:
+        shotNew(SK_BOLT, 104, -10);
+        shotNew(SK_BOLT, 112, 0);
+        shotNew(SK_BOLT, 104, 10);
+        break;
+    case W_RANG:
+        shotNew(SK_RANG, 120, 0);
+        break;
+    case W_BOMB:
+        shotNew(SK_BOMB, 52, -56);
+        break;
+    default:
+        shotNew(SK_LOB, 62, -16);
+        shotNew(SK_LOB, 60, -32);
+        shotNew(SK_LOB, 56, -48);
+        break;
+    }
+    chargeshot = 0;
+    sfx(SFX_BOOST);
+}
+
 void fireWeapon(void)
 {
     switch (weapon)
@@ -274,7 +321,7 @@ void fireWeapon(void)
         shotNew(SK_BOLT, 88, 0);
         break;
     case W_RANG:
-        shotNew(SK_RANG, 84, -6);
+        shotNew(SK_RANG, 104, 0);
         break;
     case W_BOMB:
         shotNew(SK_BOMB, 46, -50);
@@ -291,7 +338,7 @@ void fireWeapon(void)
 void explode(Shot *p)
 {
     p->kind = SK_BOOM;
-    p->life = 20;
+    p->life = p->power ? 30 : 20;
     p->vx = 0;
     p->vy = 0;
     sfx(SFX_CRASH);
@@ -314,11 +361,11 @@ u8 shotHits(u16 x0, u16 y0, u16 x1, u16 y1)
         kind = p->kind;
         px = p->x >> 4;
         py = (u16)(p->y >> 4);
-        r = (kind == SK_BOOM) ? 22 : ((kind == SK_RANG) ? 7 : 3);
+        r = (kind == SK_BOOM) ? (p->power ? 34 : 22) : ((kind == SK_RANG) ? 7 : (p->power ? 6 : 3));
         if (px + r > x0 && px < x1 + r && py + r > y0 && py < y1 + r)
         {
-            dmg = 1;
-            if (kind == SK_LOB || kind == SK_BOLT)
+            dmg = p->power ? 3 : 1;
+            if ((kind == SK_LOB || kind == SK_BOLT) && !p->power)
             {
                 p->alive = 0;
                 nshots--;
@@ -328,12 +375,12 @@ u8 shotHits(u16 x0, u16 y0, u16 x1, u16 y1)
             else if (kind == SK_BOMB)
             {
                 explode(p);
-                dmg = 3;
+                dmg = p->power ? 5 : 3;
             }
             else if (kind == SK_BOOM)
-                dmg = 3;
-            else
-                dmg = 2;
+                dmg = p->power ? 5 : 3;
+            else if (kind == SK_RANG)
+                dmg = p->power ? 4 : 2;
             return hero == HERO_WES ? dmg + 1 : dmg;    // Wes hits harder
         }
     }
@@ -419,9 +466,22 @@ void heroupdate(u8 idx)
     else if (jumpbuf)
         jumpbuf--;
 
+    // Down on the ground crouches: lower, so high shots and swoops pass over
+    herocrouch = heroground && (pad0 & KEY_DOWN) && heroinvuln < 70;
+    herotop = herocrouch ? heroyofs + 11 : heroyofs;
+
     if (heroinvuln < 70)    // brief loss of control after a hit
     {
-        if (pad0 & KEY_LEFT)
+        if (herocrouch)
+        {
+            // no walking while crouched, but you can turn to face
+            *heroxv -= *heroxv >> 2;
+            if (pad0 & KEY_LEFT)
+                heroflip = 1;
+            else if (pad0 & KEY_RIGHT)
+                heroflip = 0;
+        }
+        else if (pad0 & KEY_LEFT)
         {
             heroflip = 1;
             // turning around is snappier than speeding up
@@ -444,6 +504,23 @@ void heroupdate(u8 idx)
             coyote = 0;
             jumpcut = 0;
             sfx(SFX_JUMP);
+        }
+        // holding Y charges a shot, and letting go fires it
+        if (pad0 & KEY_Y)
+        {
+            if (herocharge < 255)
+                herocharge++;
+            if (herocharge == CHARGE_FULL)
+                sfx(SFX_POWERUP);
+        }
+        else
+        {
+            if (herocharge >= CHARGE_FULL && (weapon != W_RANG || rangOut() == 0))
+            {
+                fireCharged();
+                herothrow = 6;    // past the point where the throw fires a normal shot
+            }
+            herocharge = 0;
         }
         // Y throws; the rapid fire keeps going while Y is held
         if (herothrow == 0)
@@ -556,6 +633,8 @@ void heroupdate(u8 idx)
         heroframe = F_CHEER;
     else if (heroinvuln > 70 || herohp == 0)
         heroframe = F_HURT;
+    else if (herocrouch)
+        heroframe = herothrow ? F_CROUCH_THROW : F_CROUCH;
     else if (herothrow)
         heroframe = F_THROW + (herothrow > 11 ? 0 : (herothrow > 5 ? 1 : 2));
     else if (!heroground)
@@ -605,6 +684,7 @@ void foesReset(void)
     nfoes = a_nfoes;
     nact = 0;
     refoes = 1;
+    ffirst = 0;
     for (n = 0; n < nfoes; n++)
     {
         fkind[n] = t[0];
@@ -638,8 +718,8 @@ void foeKilled(u8 n, u16 x, u16 y, u8 kind)
 
 void foesUpdate(void)
 {
-    s16 dx, top, feet, hx, wl, wr, xl, yl, hop, hopv;
-    u8 t, b, k, st, tm, dir, fr, n, dmg, hp, near, a;
+    s16 dx, top, feet, hx, wl, wr, xl, yl, hop, hopv, lo, hi;
+    u8 t, b, k, st, tm, dir, fr, n, dmg, hp, near, a, walk, step, mk, x0, x1, hh;
     feet = (s16)heroy + 31;
     hx = (s16)herox + 16;
     // only foes near the camera move. The list is rebuilt every fourth frame,
@@ -650,8 +730,16 @@ void foesUpdate(void)
         wl = (s16)x_pos - 64;
         wr = (s16)x_pos + 320;
         nact = 0;
-        for (n = 0; n < nfoes; n++)
+        // foes are sorted by where they start, and none strays more than
+        // about 100px from its patrol, so only a window of them needs a look
+        while (ffirst < nfoes && (s16)fmax[ffirst] + 160 < wl)
+            ffirst++;
+        while (ffirst > 0 && (s16)fmax[ffirst - 1] + 160 >= wl)
+            ffirst--;
+        for (n = ffirst; n < nfoes; n++)
         {
+            if ((s16)fmin[n] > wr + 160)
+                break;
             if (fstate[n] == FOE_DEAD)
                 continue;
             xl = (s16)fx[n];
@@ -679,26 +767,20 @@ void foesUpdate(void)
         hop = fhop[n];
         hopv = fhopv[n];
         fr = fframe[n];
+        lo = fmin[n];
+        hi = fmax[n];
+        mk = foe_mask[t];
         dx = hx - (xl + (k == KIND_C ? 8 : 16));
         near = feet > yl - 40 && feet < yl + 8;    // hero on the same floor
 
         if (st == FOE_WALK)
         {
-            if ((frame & foe_mask[t]) == 0)
-            {
-                if (dir)
-                    xl++;
-                else
-                    xl--;
-            }
-            if (xl >= (s16)fmax[n])
-                dir = 0;
-            if (xl <= (s16)fmin[n])
-                dir = 1;
             if (tm)
                 tm--;
-            if (b == B_HOP)
+            walk = 1;    // patrol back and forth between fmin and fmax
+            switch (b)
             {
+            case B_HOP:
                 // hop now and then, more often with the hero close by
                 if (tm == 0 && hop == 0 && hopv == 0)
                 {
@@ -706,9 +788,8 @@ void foesUpdate(void)
                     tm = (dx > -64 && dx < 64) ? 40 : 90;
                 }
                 fr = (hop < 0) ? SF_C_ALT + ((frame >> 2) & 1) : SF_C + ((frame >> 3) & 1);
-            }
-            else if (b == B_FLY)
-            {
+                break;
+            case B_FLY:
                 hop = bobtab[(frame >> 2) & 15] - 24;
                 fr = SF_C + ((frame >> 2) & 1);
                 // swoop at a hero passing underneath
@@ -717,10 +798,157 @@ void foesUpdate(void)
                     st = FOE_CHARGE;
                     tm = 60;
                 }
-            }
-            else
-            {
-                fr = (frame >> (foe_mask[t] > 1 ? 4 : 3)) & 3;
+                break;
+            case B_ZIG:
+                // weaves up and down through the air, drifting after the hero
+                walk = 0;
+                hop = bobtab[(frame >> 1) & 15];
+                hop = (hop << 2) - 36;
+                fr = SF_C + ((frame >> 2) & 1);
+                if (frame & 1)
+                {
+                    if (dx > 4 && xl < hi + 40)
+                    {
+                        xl++;
+                        dir = 1;
+                    }
+                    else if (dx < -4 && xl > lo - 40)
+                    {
+                        xl--;
+                        dir = 0;
+                    }
+                }
+                break;
+            case B_DROP:
+                // circles up high and lets something fall on the hero's head
+                hop = bobtab[(frame >> 2) & 15] - 56;
+                fr = SF_C_ALT + ((frame >> 2) & 1);
+                if (dx > -160 && dx < 160)
+                {
+                    walk = 0;
+                    if (dx > 2 && xl < hi + 32)
+                    {
+                        xl++;
+                        dir = 1;
+                    }
+                    else if (dx < -2 && xl > lo - 32)
+                    {
+                        xl--;
+                        dir = 0;
+                    }
+                    if (tm == 0 && dx > -14 && dx < 14)
+                    {
+                        bossShot(xl, yl + hop - 4, 0, 6, 1);
+                        tm = 110;
+                    }
+                }
+                break;
+            case B_SCURRY:
+                // darts along fast, stops to sniff, and turns to dash at the hero
+                walk = 0;
+                if (tm)
+                    fr = SF_C;
+                else
+                {
+                    if (dir)
+                        xl += 2;
+                    else
+                        xl -= 2;
+                    fr = SF_C + ((frame >> 1) & 1);
+                    if (xl >= hi)
+                    {
+                        dir = 0;
+                        tm = 12 + (rnd() & 31);
+                    }
+                    else if (xl <= lo)
+                    {
+                        dir = 1;
+                        tm = 12 + (rnd() & 31);
+                    }
+                    else if (near && dx > -96 && dx < 96 && (rnd() & 31) == 0)
+                        dir = (dx > 0) ? 1 : 0;
+                }
+                break;
+            case B_BOUNCE:
+                // never stops bouncing, and steers at the hero on every landing
+                walk = 0;
+                if (hop == 0 && hopv == 0)
+                {
+                    hopv = -0x0380;
+                    if (dx > -128 && dx < 128)
+                        dir = (dx > 0) ? 1 : 0;
+                }
+                if (dir)
+                    xl++;
+                else
+                    xl--;
+                if (xl >= hi + 48)
+                    dir = 0;
+                if (xl <= lo - 48)
+                    dir = 1;
+                fr = SF_C + ((frame >> 3) & 1) + (hop < -8 ? 2 : 0);
+                break;
+            case B_SHOOT:
+                // stops, winds up and throws at a hero in range
+                fr = (frame >> 4) & 3;
+                if (tm == 0 && dx > -150 && dx < 150 && feet > yl - 96 && feet < yl + 48)
+                {
+                    st = FOE_CHARGE;
+                    tm = 40;
+                    dir = (dx > 0) ? 1 : 0;
+                    walk = 0;
+                }
+                break;
+            case B_POUNCE:
+                // crouches, then leaps at the hero
+                fr = (frame >> 3) & 3;
+                if (tm == 0 && near && dx > -100 && dx < 100)
+                {
+                    st = FOE_CHARGE;
+                    tm = 18;
+                    dir = (dx > 0) ? 1 : 0;
+                    walk = 0;
+                    sfx(SFX_BLEAT);
+                }
+                break;
+            case B_GUARD:
+                // turns to face the hero with its guard up and edges closer
+                if (near && dx > -120 && dx < 120)
+                {
+                    walk = 0;
+                    dir = (dx > 0) ? 1 : 0;
+                    fr = 4;
+                    if ((frame & 3) == 0 && (dx > 24 || dx < -24))
+                    {
+                        if (dir && xl < hi + 24)
+                            xl++;
+                        if (!dir && xl > lo - 24)
+                            xl--;
+                    }
+                }
+                else
+                    fr = (frame >> 4) & 3;
+                break;
+            case B_CHASE:
+                // gives chase, honking, a little slower than the hero runs
+                if (near && dx > -128 && dx < 128)
+                {
+                    walk = 0;
+                    dir = (dx > 0) ? 1 : 0;
+                    fr = 4 + ((frame >> 2) & 1);
+                    step = ((frame & 3) == 0) ? 2 : 1;
+                    if (dir && xl < hi + 40)
+                        xl += step;
+                    if (!dir && xl > lo - 40)
+                        xl -= step;
+                    if ((frame & 63) == 0)
+                        sfx(SFX_BLEAT);
+                }
+                else
+                    fr = (frame >> 3) & 3;
+                break;
+            default:    // B_WALK, B_CHARGE
+                fr = (frame >> (mk > 1 ? 4 : 3)) & 3;
                 // spot the hero in front on the same floor: lower the head and charge
                 if (b == B_CHARGE && near && tm == 0)
                 {
@@ -731,44 +959,108 @@ void foesUpdate(void)
                         sfx(SFX_BLEAT);
                     }
                 }
+                break;
+            }
+            if (walk)
+            {
+                if ((frame & mk) == 0)
+                {
+                    if (dir)
+                        xl++;
+                    else
+                        xl--;
+                }
+                if (xl >= hi)
+                    dir = 0;
+                if (xl <= lo)
+                    dir = 1;
             }
         }
         else if (st == FOE_CHARGE)
         {
-            if (b == B_FLY)
+            if (b == B_POUNCE)
             {
-                // dive towards the hero's height, then climb back up
-                if (tm > 30)
+                if (tm > 100)
                 {
-                    if (yl + hop < feet - 6)
-                        hop += 2;
-                    xl += (dx > 0) ? 1 : -1;
+                    // in the air
+                    fr = 5;
+                    if (dir && xl < hi + 40)
+                        xl += 2;
+                    if (!dir && xl > lo - 40)
+                        xl -= 2;
+                    if (hop == 0 && hopv == 0)
+                    {
+                        st = FOE_WALK;
+                        tm = 50;
+                    }
                 }
-                else if (hop > -24)
-                    hop--;
-                fr = SF_C_ALT + ((frame >> 1) & 1);
+                else
+                {
+                    fr = 4;
+                    tm--;
+                    if (tm == 0)
+                    {
+                        hopv = -0x0400;
+                        tm = 200;
+                    }
+                }
             }
             else
             {
-                fr = 4 + ((frame >> 2) & 1);
-                if (tm < 44)    // short wind-up, then a run
+                if (b == B_FLY)
                 {
-                    u8 step = foe_rush[t];
-                    if (step == 1)
-                        step = 1 + (frame & 1);
-                    if (dir && xl < (s16)fmax[n] + 24)
-                        xl += step;
-                    if (!dir && xl > (s16)fmin[n] - 24)
-                        xl -= step;
+                    // dive towards the hero's height, then climb back up
+                    if (tm > 30)
+                    {
+                        if (yl + hop < feet - 6)
+                            hop += 2;
+                        xl += (dx > 0) ? 1 : -1;
+                    }
+                    else if (hop > -24)
+                        hop--;
+                    fr = SF_C_ALT + ((frame >> 1) & 1);
+                }
+                else if (b == B_SHOOT)
+                {
+                    fr = (tm > 14) ? 4 : 5;
+                    if (tm == 14)
+                    {
+                        if (boss_shotgrav[stage])
+                        {
+                            // lobbed in an arc that comes down on the hero
+                            wl = dx / 3;
+                            if (wl > 48)
+                                wl = 48;
+                            if (wl < -48)
+                                wl = -48;
+                            bossShot(xl + 8, yl - 40, wl, -48, 1);
+                        }
+                        else    // straight, at head height: crouch under it
+                            bossShot(xl + (dir ? 20 : -4), yl - 30, dir ? 40 : -40, 0, 0);
+                    }
                 }
                 else
-                    fr = 4;
-            }
-            tm--;
-            if (tm == 0)
-            {
-                st = FOE_WALK;
-                tm = (b == B_FLY) ? 90 : 70;
+                {
+                    fr = 4 + ((frame >> 2) & 1);
+                    if (tm < 44)    // short wind-up, then a run
+                    {
+                        step = foe_rush[t];
+                        if (step == 1)
+                            step = 1 + (frame & 1);
+                        if (dir && xl < hi + 24)
+                            xl += step;
+                        if (!dir && xl > lo - 24)
+                            xl -= step;
+                    }
+                    else
+                        fr = 4;
+                }
+                tm--;
+                if (tm == 0)
+                {
+                    st = FOE_WALK;
+                    tm = (b == B_FLY) ? 90 : ((b == B_SHOOT) ? 80 + (rnd() & 63) : 70);
+                }
             }
         }
         else    // FOE_HURT
@@ -795,7 +1087,7 @@ void foesUpdate(void)
             }
         }
 
-        if (b == B_HOP && (hop || hopv))
+        if ((b == B_HOP || b == B_POUNCE || b == B_BOUNCE) && (hop || hopv))
         {
             hop += hopv >> 8;
             hopv += 0x0030;
@@ -808,11 +1100,25 @@ void foesUpdate(void)
 
         if (st != FOE_HURT && st != FOE_DEAD)
         {
-            top = yl + hop - foe_h[k];
+            x0 = foe_x0[k];
+            x1 = foe_x1[k];
+            hh = foe_h[k];
+            top = yl + hop - hh;
             // hit by a shot
-            dmg = nshots ? shotHits(xl + foe_x0[k], top - 2, xl + foe_x1[k], yl + hop) : 0;
-            if (!dmg && herohp && dx > -40 && dx < 40 && hx + 6 > xl + foe_x0[k] && hx - 6 < xl + foe_x1[k] && feet > top &&
-                (s16)heroy + heroyofs < yl + hop)
+            dmg = nshots ? shotHits(xl + x0, top - 2, xl + x1, yl + hop) : 0;
+            // a guard blocks ordinary shots from the front: bombs, charged
+            // shots, stomps and hits from behind get through
+            if (dmg && b == B_GUARD && dir == (dx > 0 ? 1 : 0))
+            {
+                if (dmg < (hero == HERO_WES ? 4 : 3))
+                {
+                    dmg = 0;
+                    spawnSpark(xl + (dir ? 22 : -6), top + 2);
+                    sfx(SFX_LAND);
+                }
+            }
+            if (!dmg && herohp && dx > -40 && dx < 40 && hx + 6 > xl + x0 && hx - 6 < xl + x1 && feet > top &&
+                (s16)heroy + herotop < yl + hop)
             {
                 // touching the hero: stomp from above, otherwise the foe wins
                 if (*heroyv > 0 && feet < top + 10)
@@ -1082,9 +1388,22 @@ void drawWorld(void)
     if (heroinvuln && (heroinvuln & 4))
         sy = 240;
     drawBig(sx, sy, heroframe, ATTR_SPRITE(hero) | (heroflip ? 0x40 : 0), hero == HERO_JON ? &jon_pic : &wes_pic);
+    // charging: sparks gather at the throwing hand, then it flashes when ready
+    if (herocharge > 12)
+    {
+        x = sx + (heroflip ? 0 : 20);
+        y = sy + (herocrouch ? 18 : 9);
+        if (herocharge >= CHARGE_FULL)
+            drawSmall(x - 2, y - 2, IF_SPARKLE + ((frame >> 1) & 1), ATTR_SPRITE(PAL_ITEMS) | OBJ_PRIO(3), &items_pic);
+        else if (frame & 2)
+            drawSmall(x + ((frame & 4) ? -3 : 3), y + ((frame & 8) ? -3 : 3), SF_SPARK + ((frame >> 2) & 1),
+                      ATTR_SPRITE(PAL_FOE_A) | OBJ_PRIO(3), a_small);
+    }
 
-    if (bossactive || bossdead)
+    if (bossactive)
         bossDraw();
+    if (nbshots)
+        bshotsDraw();
 
     for (j = 0; j < nact; j++)
     {
@@ -1101,9 +1420,9 @@ void drawWorld(void)
         if (k == KIND_C)
             drawSmall(sx, (s16)fy[n] + fhop[n] - 16 - (s16)y_pos, fframe[n], ATTR_SPRITE(PAL_FOE_A) | attr, a_small);
         else if (k == KIND_B)
-            drawBig(sx, (s16)fy[n] - 32 - (s16)y_pos, 7 + fframe[n], ATTR_SPRITE(PAL_FOE_B) | attr, a_foes);
+            drawBig(sx, (s16)fy[n] + fhop[n] - 32 - (s16)y_pos, 7 + fframe[n], ATTR_SPRITE(PAL_FOE_B) | attr, a_foes);
         else
-            drawBig(sx, (s16)fy[n] - 32 - (s16)y_pos, fframe[n], ATTR_SPRITE(PAL_FOE_A) | attr, a_foes);
+            drawBig(sx, (s16)fy[n] + fhop[n] - 32 - (s16)y_pos, fframe[n], ATTR_SPRITE(PAL_FOE_A) | attr, a_foes);
     }
 
     // shots
@@ -1139,8 +1458,20 @@ void drawWorld(void)
             drawSmall(x, y - 16, f, ATTR_SPRITE(PAL_ITEMS) | 0x40, &items_pic);
             drawSmall(x - 16, y, f, ATTR_SPRITE(PAL_ITEMS) | 0x80, &items_pic);
             drawSmall(x, y, f, ATTR_SPRITE(PAL_ITEMS) | 0xC0, &items_pic);
+            if (sh->power)
+            {
+                // a charged blast is bigger: a second ring further out
+                drawSmall(x - 30, y - 8, f, ATTR_SPRITE(PAL_ITEMS), &items_pic);
+                drawSmall(x + 14, y - 8, f, ATTR_SPRITE(PAL_ITEMS) | 0x40, &items_pic);
+                drawSmall(x - 8, y - 30, f, ATTR_SPRITE(PAL_ITEMS), &items_pic);
+                drawSmall(x - 8, y + 14, f, ATTR_SPRITE(PAL_ITEMS) | 0xC0, &items_pic);
+            }
             break;
         }
+        // charged shots leave a trail of sparks
+        if (sh->power && (frame & 1) && sh->kind != SK_BOOM)
+            drawSmall(x - 8 - (sh->vx >> 3), y - 8, SF_SPARK + ((frame >> 1) & 1), ATTR_SPRITE(PAL_FOE_A) | OBJ_PRIO(3),
+                      a_small);
     }
     for (n = nsparks ? 0 : MAX_SPARKS; n < MAX_SPARKS; n++)
     {
@@ -1314,6 +1645,8 @@ void stageStart(u8 newstage)
     herohp = hpmax[hero];
     heroinvuln = checkpoint ? 60 : 0;
     herothrow = 0;
+    herocharge = 0;
+    herocrouch = 0;
     heroflip = 0;
     heroground = 0;
     herodead = 0;
@@ -1404,8 +1737,10 @@ u8 stageLoop(void)
         else
             heartsUpdate();
         checkpointsUpdate();
-        if (bossactive || bossdead)
+        if (bossactive)
             bossUpdate();
+        if (nbshots)
+            bshotsUpdate();
 
         if (herohp != lasthp)
             hudHearts();

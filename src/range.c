@@ -105,6 +105,7 @@ u8 rangeRun(u8 variant)
     char *bgpal;
     u8 k, done = 0, won = 0, lastsec = 0xFF;
     u16 endtimer = 0;
+    s16 gx, gy;
 
     setScreenOff();
     setBrightness(0);
@@ -361,6 +362,14 @@ u8 rangeRun(u8 variant)
         drawSmall(cx - 8, cy - 8, (frame >> 3) & 1, ATTR_SPRITE(PAL_OBJ) | OBJ_PRIO(3), &range_small);
         if (flash)
             drawSmall(cx - 8, cy - 8, 10, ATTR_SPRITE(PAL_OBJ) | OBJ_PRIO(3), &range_small);
+        // the revolver follows the sights from below, kicking back on each shot
+        gx = cx - 31;
+        gy = 164 + (cy >> 4) + (flash ? 6 : 0) + (reload ? 12 : 0);
+        for (k = 0; k < 4; k++)
+            drawBig(gx + ((k & 1) ? 32 : 0), gy + ((k & 2) ? 32 : 0), 3 + k, ATTR_SPRITE(PAL_OBJ) | OBJ_PRIO(3),
+                    &range_big);
+        if (flash > 1)
+            drawSmall(gx + 23, gy - 12, 10, ATTR_SPRITE(PAL_OBJ) | OBJ_PRIO(3), &range_small);
         for (k = 0; k < NPLATES; k++)
         {
             if (pl_state[k] == 0)

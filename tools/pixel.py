@@ -35,6 +35,11 @@ class Canvas:
         c.px = [row[:] for row in self.px]
         return c
 
+    def cropped(self, x0, y0, w, h):
+        c = Canvas(w, h)
+        c.px = [row[x0:x0 + w] for row in self.px[y0:y0 + h]]
+        return c
+
     def shifted(self, dx, dy):
         c = Canvas(self.w, self.h)
         c.blit(self, dx, dy)

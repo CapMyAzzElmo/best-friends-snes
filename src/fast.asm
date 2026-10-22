@@ -121,11 +121,11 @@ _fdNew:
 
 ; void shotsMove(void)
 ; Moves and ages the hero's shots (the Shot structs in stage.c, 12 bytes each:
-; x 0, y 2, vx 4, vy 6, alive 8, life 9, kind 10, event 11), retires the ones
+; x 0, y 2, vx 4, vy 6, alive 8, life 9, kind 10, event 11, power 12), retires the ones
 ; that land or leave the screen, and boxes the rest for shotHits. A shot that
 ; needs a spark or a sound gets an event for stage.c: 1 splat, 2 blast.
-.define SHOT_SIZE 12
-.define SHOT_END 72             ; MAX_SHOTS * SHOT_SIZE
+.define SHOT_SIZE 14
+.define SHOT_END 112            ; MAX_SHOTS * SHOT_SIZE
 
 .section ".fastshots_text" superfree
 
@@ -184,7 +184,7 @@ _smMoving:
     jmp _smGrav
 _smRang:
     lda.w shlifel
-    cmp.b #66
+    cmp.b #99
     bcc +
     jmp _smStep
 +   rep #$20
@@ -198,13 +198,13 @@ _smRang:
 +   bpl _smRx1                  ; px >= hx
     lda.w shvxl                 ; px < hx and vx < 80: vx += 5
     sec
-    sbc.w #80
+    sbc.w #112
     bvc +
     eor.w #$8000
 +   bpl _smRy
     lda.w shvxl
     clc
-    adc.w #5
+    adc.w #3
     sta.w shvxl
     bra _smRy
 _smRx1:
@@ -213,14 +213,14 @@ _smRx1:
     beq _smRy
     lda.w shvxl                 ; px > hx and vx > -80: vx -= 5
     sec
-    sbc.w #-80
+    sbc.w #-112
     beq _smRy
     bvc +
     eor.w #$8000
 +   bmi _smRy
     lda.w shvxl
     sec
-    sbc.w #5
+    sbc.w #3
     sta.w shvxl
 _smRy:
     lda.w shpy
@@ -231,13 +231,13 @@ _smRy:
 +   bpl _smRy1
     lda.w shvyl                 ; py < hy and vy < 40: vy += 3
     sec
-    sbc.w #40
+    sbc.w #24
     bvc +
     eor.w #$8000
 +   bpl _smCatch
     lda.w shvyl
     clc
-    adc.w #3
+    adc.w #2
     sta.w shvyl
     bra _smCatch
 _smRy1:
@@ -246,17 +246,22 @@ _smRy1:
     beq _smCatch
     lda.w shvyl                 ; py > hy and vy > -40: vy -= 3
     sec
-    sbc.w #-40
+    sbc.w #-24
     beq _smCatch
     bvc +
     eor.w #$8000
 +   bmi _smCatch
     lda.w shvyl
     sec
-    sbc.w #3
+    sbc.w #2
     sta.w shvyl
 _smCatch:
-    ; back in the hand: |px - hx| < 12 and |py - hy| < 16
+    ; back in the hand: |px - hx| < 12 and |py - hy| < 16, once it has been out a while
+    sep #$20
+    lda.w shlifel
+    cmp.b #80
+    rep #$20
+    bcs _smStep
     lda.w shpx
     sec
     sbc.w shhx
@@ -324,7 +329,11 @@ _smStep:
     sta.w shots+10,x            ; SK_BOOM
     lda.b #20
     sta.w shots+9,x
-    lda.b #2
+    lda.w shots+12,x            ; a charged bomb burns longer
+    beq +
+    lda.b #30
+    sta.w shots+9,x
++   lda.b #2
     sta.w shots+11,x            ; event: blast
     inc.w shevents
     rep #$20
@@ -434,19 +443,19 @@ _smNext:
 +   ; widen the box by the biggest hit radius
     lda.w shbx0
     sec
-    sbc.w #22
+    sbc.w #34
     sta.w shbx0
     lda.w shbx1
     clc
-    adc.w #22
+    adc.w #34
     sta.w shbx1
     lda.w shby0
     sec
-    sbc.w #22
+    sbc.w #34
     sta.w shby0
     lda.w shby1
     clc
-    adc.w #22
+    adc.w #34
     sta.w shby1
     plp
     rtl
@@ -470,5 +479,139 @@ _smPos:
     ror a
     sta.w shpy
     rts
+
+.ends
+
+; void bshotsMove(void)
+; Moves the boss's and the foes' shots (the BShot structs in boss.c, 10 bytes
+; each: x 0, y 2, vx 4, vy 6 in 1/16 px, alive 8, grav 9), retires the ones
+; that leave the screen or land, and checks them against the hero. For
+; boss.c it leaves bhit (x of a shot that hit the hero, 0 for none) and
+; bland (x of a shot that hit the floor, 0 for none).
+.define BSHOT_SIZE 10
+.define BSHOT_END 80            ; MAX_BSHOTS * BSHOT_SIZE
+
+.section ".fastbshots_text" superfree
+
+bshotsMove:
+    php
+    rep #$30
+    ldx.w #0
+_buLoop:
+    sep #$20
+    lda.w bshots+8,x
+    bne +
+    jmp _buNext
++   rep #$20
+    lda.w bshots+0,x
+    clc
+    adc.w bshots+4,x
+    sta.w bshots+0,x
+    lda.w bshots+2,x
+    clc
+    adc.w bshots+6,x
+    sta.w bshots+2,x
+    sep #$20
+    lda.w bshots+9,x
+    rep #$20
+    beq +
+    lda.w bshots+6,x
+    clc
+    adc.w #2
+    sta.w bshots+6,x
++   lda.w bshots+0,x
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    sta.w bspx
+    lda.w bshots+2,x
+    cmp.w #$8000
+    ror a
+    cmp.w #$8000
+    ror a
+    cmp.w #$8000
+    ror a
+    cmp.w #$8000
+    ror a
+    sta.w bspy
+    ; off the left or right of the screen
+    lda.w bspx
+    clc
+    adc.w #16
+    sec
+    sbc.w x_pos
+    bpl +
+    jmp _buKill
++   lda.w x_pos
+    clc
+    adc.w #256
+    sec
+    sbc.w bspx
+    bpl +
+    jmp _buKill
+    ; below the floor (py > 192): lands
++   lda.w bspy
+    sec
+    sbc.w #193
+    bvc +
+    eor.w #$8000
++   bmi +
+    lda.w bspx
+    sta.w bland
+    jmp _buKill
+    ; far above the screen (py < -32)
++   lda.w bspy
+    sec
+    sbc.w #-32
+    bvc +
+    eor.w #$8000
++   bpl +
+    jmp _buKill
+    ; the hero: 0 < herox + 19 - px < 22 and 0 < heroy + 28 - py < 41 - herotop
++   sep #$20
+    lda.w herohp
+    rep #$20
+    bne +
+    jmp _buNext
++   lda.w herox
+    clc
+    adc.w #18
+    sec
+    sbc.w bspx                  ; d - 1
+    cmp.w #21
+    bcs _buNext
+    lda.w herotop
+    and.w #$00ff
+    eor.w #$ffff
+    sec
+    adc.w #40                   ; 40 - herotop
+    sta.w bslim
+    lda.w heroy
+    clc
+    adc.w #27
+    sec
+    sbc.w bspy                  ; e - 1
+    cmp.w bslim
+    bcs _buNext
+    lda.w bspx
+    clc
+    adc.w #8
+    sta.w bhit
+_buKill:
+    sep #$20
+    stz.w bshots+8,x
+    dec.w nbshots
+_buNext:
+    rep #$20
+    txa
+    clc
+    adc.w #BSHOT_SIZE
+    tax
+    cpx.w #BSHOT_END
+    bcs +
+    jmp _buLoop
++   plp
+    rtl
 
 .ends

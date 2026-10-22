@@ -37,6 +37,8 @@
 #define F_THROW 16
 #define F_HURT 19
 #define F_CHEER 20
+#define F_CROUCH 21
+#define F_CROUCH_THROW 22
 
 #define ATTR_SPRITE(pal) (OBJ_PRIO(2) | ((pal) << 1))
 #define PAL_HERO_DIM 3
@@ -127,7 +129,7 @@ void loadStageAssets(u8 s);
 // ---------------------------------------------------------------- stage.c
 extern u16 herox, heroy;
 extern s16 *heroxv, *heroyv;
-extern u8 herohp, heroinvuln, heroyofs, stagedone;
+extern u8 herohp, heroinvuln, heroyofs, herotop, stagedone;
 extern u16 bossarena;
 void heroHurt(s16 fromx);
 void heroBounce(s16 vy);
@@ -141,8 +143,12 @@ u8 shotHits(u16 x0, u16 y0, u16 x1, u16 y1);
 #define STAGE_QUIT 3
 
 // ---------------------------------------------------------------- boss.c
-extern u8 bossactive, bossdead;
+extern u8 bossactive, bossdead, nbshots;
+extern const u8 boss_shotgrav[6];
 void bossInit(void);
+void bossShot(s16 x, s16 y, s16 vx, s16 vy, u8 grav);
+void bshotsUpdate(void);
+void bshotsDraw(void);
 void bossStart(void);
 void bossUpdate(void);
 void bossDraw(void);

@@ -709,6 +709,9 @@ def clear_fanfare():
     rows = []
     for r in range(64):
         rows.append([tr.cells.get(r) for tr in (lead, bass, t3, t5, ks)])
+    # the samples loop, so the last chord must be cut or it drones on
+    rows[30] = [Cell(note=NOTE_CUT)] * 5
+    rows[31][0] = Cell(cmd=2, arg=1)            # then straight to the silent loop
     silent = [[None] * 5 for _ in range(64)]
     silent[0] = [Cell(note=NOTE_CUT)] * 5
     silent[63][0] = Cell(cmd=2, arg=1)          # Bxx: loop on the silent pattern

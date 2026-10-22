@@ -15,7 +15,8 @@ Writes (build/):
   race_small.pic     16x16: cone 0, cone hit 1, spark 2-4, dust 5-6
   jonbike.pal, wesbike.pal, bonus_obj.pal (sprite palettes 3, 4, 7)
   range_bg1.pic/.map, range_bg2.pic/.map, range_bg.pal
-  range_big.pic      32x32: plate up 0, plate hit 1, plate down 2
+  range_big.pic      32x32: plate up 0, plate hit 1, plate down 2,
+                     revolver quarters 3-6 (64x64, row by row)
   range_small.pic    16x16: crosshair 0-1, bottle 2, bottle shatter 3,
                      clay 4-5, clay shatter 6, spark 7-9, flash 10
 """
@@ -452,6 +453,37 @@ def clay(i):
     return outlined(c, 1)
 
 
+def revolver():
+    """64x64: the shooter's revolver from behind the right shoulder, muzzle
+    near the top middle, gloved hand and sleeve running off the bottom right."""
+    c = Canvas(64, 64)
+    # sleeve and arm (dark jacket) into the corner
+    capsule(c, (40, 46), (60, 63), 7.5, 8)
+    capsule(c, (38, 44), (56, 60), 1.6, 10)
+    # grip (orange-brown wood) and the glove around it
+    capsule(c, (33, 34), (38, 48), 4.2, 3)
+    capsule(c, (34, 36), (37, 44), 2.0, 2)
+    ellipse(c, 37, 44, 6.5, 5.5, 10)
+    capsule(c, (33, 42), (41, 46), 1.5, 11)
+    # frame and trigger guard
+    capsule(c, (30, 26), (36, 34), 3.6, 14)
+    ellipse(c, 32, 36, 3.0, 2.0, 8)
+    # cylinder
+    ellipse(c, 31, 24, 6.5, 5.0, 14)
+    ellipse(c, 31, 23, 5.0, 3.6, 9)
+    for k in range(6):
+        a = k * math.pi / 3
+        c.set(int(31 + math.cos(a) * 3.2), int(23 + math.sin(a) * 2.2), 8)
+    # barrel up to the muzzle, with the top strap catching the light
+    capsule(c, (31, 19), (31, 4), 2.6, 14)
+    capsule(c, (30, 18), (30, 5), 0.8, 4)
+    ellipse(c, 31, 4, 2.4, 1.5, 8)
+    c.set(31, 2, 9)
+    # hammer
+    capsule(c, (35, 27), (38, 24), 1.2, 9)
+    return outlined(c, 1)
+
+
 def flash_puff():
     c = Canvas(16, 16)
     for a in range(8):
@@ -551,7 +583,10 @@ def main():
     sky_d[2:5] = [(250, 160, 110), (230, 120, 100), (180, 90, 110)]
     sky_d[5:7] = [(255, 210, 170), (240, 180, 150)]
     write_pals("range_bg_dusk.pal", None, rng_d, sky_d)
-    rbig = [plate(0).px, plate(1).px, plate(2).px]
+    gun = revolver()
+    quarters = [gun.cropped(x, y, 32, 32) for y in (0, 32) for x in (0, 32)]
+    rbig = [plate(0).px, plate(1).px, plate(2).px] + [q.px for q in quarters]
+    to_image(gun, [snes_color(c) for c in OBJ_PAL]).save(os.path.join(SPR, "revolver.png"))
     open(os.path.join(BUILD, "range_big.pic"), "wb").write(grid_pic(rbig, 32))
     rsmall = [crosshair(0), crosshair(1), bottle(False), bottle(True), clay(0), clay(1), clay(2),
               critters.spark(0), critters.spark(1), critters.spark(2), flash_puff()]

@@ -24,7 +24,7 @@ WHITE = (248, 248, 240)
 
 # frame order (must match src/main.c)
 FRAMES = (["idle0", "idle1", "idle2", "idle3"] + [f"run{i}" for i in range(8)] +
-          ["jump", "apex", "fall", "land", "throw0", "throw1", "throw2", "hurt", "cheer"])
+          ["jump", "apex", "fall", "land", "throw0", "throw1", "throw2", "hurt", "cheer", "crouch", "crouchthrow"])
 
 # ---------------------------------------------------------------------------
 # Jon: tall, dark brown hair, clean-shaven grin, black hoodie, ripped light jeans
@@ -195,10 +195,14 @@ def pose(name):
         return -2, 0, (-20, 30), (14, 20), (-150, 20), (95, 50)
     if name == "cheer":
         return 0, -1, (-8, 6), (10, 6), (-140, -20), (120, 40)
+    if name == "crouch":       # low, knees deep, ready to spring
+        return 1, 8, (-40, -110), (70, 120), (-10, 50), (50, 60)
+    if name == "crouchthrow":  # throwing from the crouch
+        return 2, 8, (-40, -110), (70, 120), (-30, 30), (85, 5)
     raise ValueError(name)
 
 
-SPOON = {"throw0": -50, "throw1": 20, "throw2": 70}
+SPOON = {"throw0": -50, "throw1": 20, "throw2": 70, "crouchthrow": 80}
 
 
 def draw_spoon(c, hand_pos, ang, steel):
